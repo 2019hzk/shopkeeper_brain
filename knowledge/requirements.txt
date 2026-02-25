@@ -1,0 +1,21 @@
+﻿# 在顶部添加额外的源
+# 1. pytorch 从官网镜像源下载
+--extra-index-url https://download.pytorch.org/whl/cu130
+torch
+torchvision
+
+# 2. 其它三方组件的依赖包都从清华镜像源下载
+minio
+langchain-openai
+langgraph
+sentence-transformers
+neo4j
+pymongo
+openai-agents
+pymilvus
+grandalf
+
+# 3. mineru 用uv的方式安装 从阿里云镜像源下载
+# pip install --upgrade pip -i https://mirrors.aliyun.com/pypi/simple
+# pip install uv -i https://mirrors.aliyun.com/pypi/simple
+# uv pip install -U "mineru[all]" -i https://mirrors.aliyun.com/pypi/simple
