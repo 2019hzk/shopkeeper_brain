@@ -1,6 +1,7 @@
 import json
 
 from langgraph.graph import StateGraph, END
+from langgraph.graph.state import CompiledStateGraph
 from knowledge.processor.import_process.state import ImportGraphState
 from knowledge.processor.import_process.nodes.pdf_to_md_node import PdfToMdNode
 from knowledge.processor.import_process.nodes.entry_node import EntryNode
@@ -8,7 +9,7 @@ from knowledge.processor.import_process.state import create_default_state
 from knowledge.processor.import_process.base import setup_logging
 
 
-def create_import_graph() -> StateGraph:
+def create_import_graph() -> CompiledStateGraph:
     """
     定义导入业务的graph状态拓扑谱（langgraph构建流水线）整个流水线各个节点要读取或者写入的节点。
     Returns:
