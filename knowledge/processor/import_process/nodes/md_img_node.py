@@ -5,12 +5,12 @@ import base64
 from collections import deque
 from pathlib import Path
 from typing import Tuple, List, Deque
-
 from openai import OpenAI
 
+from knowledge.utils.minio_util import get_minio_client
 from knowledge.processor.import_process.base import BaseNode, setup_logging
 from knowledge.processor.import_process.state import ImportGraphState
-from knowledge.processor.import_process.exceptions import ValidationError, FileProcessingError, PdfConversionError
+from knowledge.processor.import_process.exceptions import ValidationError, FileProcessingError, ImageProcessingError
 from knowledge.processor.import_process.config import get_config
 
 
@@ -46,12 +46,41 @@ class MarkDownImageNode(BaseNode):
         # 4. 用VLM给图片生成图片描述(摘要)
         images_summaries = self._extract_img_summary(md_path_obj.stem, target_images_context, config)
 
-        # 5. 图片上传到minio（图片在minio上的地址）
+        # 5.复合函数
+        # 5.1 本地图片上传到minio--->remote_url(图片远程的地址)
+        # 5.2 替换md中的图片的本地url 以及vlm生成的摘要
+        new_md_content = self._upload_img_and_update_new_md(md_path_obj.stem, md_content, images_summaries,
+                                                            target_images_context, config)
 
-        # 6. 回写（将图片描述和图片地址）写到到md_content中
+        # 6. 将更新后的内容备份（调试）
+        self._backup_new_md_file(md_path_obj, new_md_content)
 
-        # 7. 返回state
-        return {"img_context": target_images_context, "images_summaries": images_summaries}
+        # 7. 更新state
+        state['md_content'] = new_md_content
+
+        # 8. 返回更新后的状态
+        return state
+
+    def _backup_new_md_file(
+            self,
+            md_path_obj: Path,
+            new_md_content: str
+    ) -> str:
+        self.log_step("step_5", "备份新文件")
+
+        new_file_path = md_path_obj.with_name(
+            f"{md_path_obj.stem}_new{md_path_obj.suffix}"
+        )
+
+        try:
+            with open(new_file_path, "w", encoding="utf-8") as f:
+                f.write(new_md_content)
+            self.logger.info(f"处理后的文件已备份至: {new_file_path}")
+        except IOError as e:
+            self.logger.error(f"写入新文件失败 {new_file_path}: {e}")
+            raise ImageProcessingError(f"文件写入失败: {e}", node_name=self.name)
+
+        return str(new_file_path)
 
     def _get_img_md_content(self, state: ImportGraphState) -> Tuple[str, Path, Path]:
         """
@@ -285,12 +314,13 @@ class MarkDownImageNode(BaseNode):
 
         # 2. 发送请求（提取摘要）
         for img_name, img_path, images_context in target_images_context:
+
             self._enforce_rate_limit(request_timestamps, config.requests_per_minute, 60)
 
             summary = self._get_img_summary(config, client, document_title, img_path, images_context)
             summaries[img_name] = summary
 
-        # 3. 返回映射表sss
+        # 3. 返回映射表
         logging.info(f"生成{len(summaries)}图片摘要")
 
         return summaries
@@ -388,8 +418,73 @@ class MarkDownImageNode(BaseNode):
             self.logger.warning(f"图片摘要生成失败 {img_path}: {e}")
             return "图片描述"
 
+    def _upload_img_and_update_new_md(self, document_name, md_content, images_summaries, target_images_context, config
 
-# 测试
+                                      ):
+
+        """
+        上传图片到minio以及替换md中的图片url和摘要
+        Args:
+            md_content:
+            images_summaries:
+            target_images_context:
+
+        Returns:
+
+        """
+        self.log_step("step5","上传图片到minio并且更新md的摘要和图片地址")
+
+        remote_urls = {}
+        # 1. 构建MinIO客户端
+        minio_client = get_minio_client()
+
+        if minio_client is None:
+            self.logger.warning(f"无法将本地的图片上传到minio")  # 可选
+
+        # 2. 遍历图片信息列表
+        for img_name, img_path, _ in target_images_context:
+
+            # 2.1 构建对象的名字
+            object_name = f"{document_name}/{img_name}"
+
+            try:
+                # 2.2 开始上传
+                minio_client.fput_object(
+                    config.minio_bucket,
+                    object_name,
+                    img_path,
+                )
+                # 2.3 手动拼接远程地址
+                # http://192.168.200.130:9000/test/temp_3.png
+                remote_url = config.get_minio_base_url() + "/" + config.minio_bucket + "/" + object_name
+                self.logger.info(f"{img_name}图片上传到minio成功")
+                remote_urls[img_name] = remote_url
+
+            except Exception as e:
+                self.logger.warning(f"{img_name}上传到minio失败")
+                remote_urls[img_name] = "http://minio_mock/" + document_name + "/" + img_name  # 可选
+
+        self.logger.info(f"成功上传{len(remote_urls)}图片到minio")
+
+        # 3. 替换（摘要和图片地址）到MD内容中
+        new_md_content = md_content
+        for img_name, images_summary in images_summaries.items():
+            # 3.1 提取远程地址
+            remote_url = remote_urls.get(img_name)
+
+            if not remote_url:
+                continue  # 不替换md中该图片
+
+            # 3.2 替换url和摘要
+            replace_pattern = re.compile(
+                r"!\[(.*?)\]\((.*?" + re.escape(img_name) + r".*?)\)",
+                re.IGNORECASE
+            )
+            new_md_content = replace_pattern.sub(f"![{images_summary}]({remote_url})", new_md_content)
+
+        return new_md_content
+
+
 if __name__ == '__main__':
     setup_logging()
     img_md_node = MarkDownImageNode()
@@ -398,7 +493,4 @@ if __name__ == '__main__':
         "md_path": r"D:\develop\develop\workspace\pycharm\251020\shopkeeper_brain\knowledge\processor\import_process\import_temp_dir\万用表的使用\hybrid_auto\万用表的使用.md"
     }
 
-    result = img_md_node.process(state)
-
-    # 10张图片的信息
-    print(result.get('images_summaries'))
+    img_md_node.process(state)

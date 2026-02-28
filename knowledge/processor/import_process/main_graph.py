@@ -5,8 +5,17 @@ from langgraph.graph.state import CompiledStateGraph
 from knowledge.processor.import_process.state import ImportGraphState
 from knowledge.processor.import_process.nodes.pdf_to_md_node import PdfToMdNode
 from knowledge.processor.import_process.nodes.entry_node import EntryNode
+from knowledge.processor.import_process.nodes.md_img_node import MarkDownImageNode
 from knowledge.processor.import_process.state import create_default_state
 from knowledge.processor.import_process.base import setup_logging
+
+
+def import_router(state: ImportGraphState):
+    if state.get('is_md_read_enabled'):
+        return "md_img_node"
+    if state.get('is_pdf_read_enabled'):
+        return "pdf_to_md_node"
+    return END  # 安全降级
 
 
 def create_import_graph() -> CompiledStateGraph:
@@ -26,16 +35,31 @@ def create_import_graph() -> CompiledStateGraph:
     # 2.2 添加剩下的节点
     nodes = {
         "entry_node": EntryNode(),
-        "pdf_to_md_node": PdfToMdNode()
+        "pdf_to_md_node": PdfToMdNode(),
+        "md_img_node": MarkDownImageNode()
     }
     for key, value in nodes.items():
         graph_pineline.add_node(key, value)
 
     # 3. 定义边（顺序边、条件边）
     # TODO:条件边
+    # source:  路由开始节点
+    # path:    路由函数
+    # path_map 路由函数的映射
+
+    graph_pineline.add_conditional_edges("entry_node",
+                                         import_router,
+                                         {
+                                             "md_img_node": "md_img_node",
+                                             "pdf_to_md_node": "pdf_to_md_node",
+                                             END: END
+                                         }
+                                         )
+
     # graph_pineline.add_conditional_edges()
     graph_pineline.add_edge("entry_node", "pdf_to_md_node")
-    graph_pineline.add_edge("pdf_to_md_node", END)
+    graph_pineline.add_edge("pdf_to_md_node","md_img_node")
+    graph_pineline.add_edge("md_img_node",END)
 
     # 4. 编译（编排）
     return graph_pineline.compile()
@@ -58,7 +82,7 @@ def run_import_graph(import_file_path: str, file_dir: str):
     final_state = None
     for event in graph_app.stream(init_state):
         for node_name, state in event.items():
-            print(f"运行节点的:{node_name},state:{state}")
+            print(f"运行节点的:{node_name}")
             final_state = state
 
     return final_state

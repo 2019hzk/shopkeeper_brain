@@ -8,7 +8,9 @@ from dataclasses import dataclass, field
 from typing import Set, Optional
 import os
 from dotenv import load_dotenv
+
 load_dotenv()
+
 
 @dataclass
 class ImportConfig:
@@ -17,9 +19,9 @@ class ImportConfig:
     # ==================== 文档处理配置 ====================
     max_content_length: int = 2000  # 切片最大长度
     img_content_length: int = 200  # 图片上下文最大长度
-    min_content_length: int = 500   # 合并短内容的最小长度
-    overlap_sentences: int = 1      # 句子级切分时的重叠句数
-    item_name_chunk_k: int = 3      # 商品名识别时使用的切片数量
+    min_content_length: int = 500  # 合并短内容的最小长度
+    overlap_sentences: int = 1  # 句子级切分时的重叠句数
+    item_name_chunk_k: int = 3  # 商品名识别时使用的切片数量
 
     image_extensions: Set[str] = field(
         default_factory=lambda: {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"}
@@ -99,6 +101,10 @@ class ImportConfig:
         """从环境变量加载配置"""
         return cls()
 
+    # http://192.168.200.130:9000/
+    def get_minio_base_url(self):
+        base_protocol = "https://" if self.minio_secure else "http://"
+        return base_protocol + f"{self.minio_endpoint}"
 
 
 # ==================== 全局单例 ====================
@@ -111,4 +117,3 @@ def get_config() -> ImportConfig:
     if _config is None:
         _config = ImportConfig.from_env()
     return _config
-

@@ -1,0 +1,5 @@
+# 环境与配置
+.venv/
+.idea/
+__pycache__/
+*.pyc
