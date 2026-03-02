@@ -1,7 +1,4 @@
-
-deaadedewdfaewfdeswfewfewfew
 # 1. 核心业务系统介绍
-
 ## 1.1 订单模块
 订单模块负责处理所有的交易。
 
