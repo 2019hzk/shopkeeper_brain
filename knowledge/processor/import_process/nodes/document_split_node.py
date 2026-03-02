@@ -1,12 +1,10 @@
-import json
-import re
-from email.quoprimime import body_length
-from pathlib import Path
-from typing import Tuple, List, Dict, Any, final
-from knowledge.processor.import_process.base import BaseNode
+import os, re, json
+from typing import Tuple, List, Dict, Any
+from knowledge.processor.import_process.base import BaseNode, setup_logging
 from knowledge.processor.import_process.state import ImportGraphState
 from knowledge.processor.import_process.config import get_config
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from knowledge.utils.markdown_utils import MarkdownTableLinearizer
 
 
 class DocumentSpliterNode(BaseNode):
@@ -22,17 +20,67 @@ class DocumentSpliterNode(BaseNode):
         sections = self._split_by_headings(md_content, file_title)
 
         # 3. 处理(切分和合并)
-        fina_chunks = self.split_and_merge(sections, max_content_length, min_content_length)
+        final_chunks = self.split_and_merge(sections, max_content_length, min_content_length)
 
-        # 3. 组装
+        # 4. 组装
+        chunks = self._assemble_chunk(final_chunks)
 
-        # 4. 更新state:chunks
+        # 5. 更新state:chunks
+        state['chunks'] = chunks
 
-        pass
+        # 6. 日志统计
+        self._log_summary(md_content, chunks, max_content_length)
 
-    def _get_inputs(self, state: ImportGraphState) -> Tuple[str, str, int]:
+        # 7. 备份
+        state["chunks"] = chunks
+        self._backup_chunks(state, chunks)
 
-        self.log_step("step1", "切分文档的参数校验以及获取")
+        # 8. 返回
+        return state
+
+        # ------------------------------------------------------------------ #
+        #                       日志 & 备份                                    #
+        # ------------------------------------------------------------------ #
+
+    def _log_summary(self, raw_content: str, chunks: List[dict], max_length: int):
+        """输出切分统计信息"""
+        self.log_step("step5", "输出统计")
+
+        lines_count = raw_content.count("\n") + 1
+        self.logger.info(f"原文档行数: {lines_count}")
+        self.logger.info(f"最终切分章节数: {len(chunks)}")
+        self.logger.info(f"最大切片长度: {max_length}")
+
+        if chunks:
+            self.logger.info("章节预览:")
+            for i, sec in enumerate(chunks[:5]):
+                title = sec.get("title", "")[:30]
+                self.logger.info(f"  {i + 1}. {title}...")
+            if len(chunks) > 5:
+                self.logger.info(f"  ... 还有 {len(chunks) - 5} 个章节")
+
+    def _backup_chunks(self, state: ImportGraphState, sections: List[dict]):
+        """将切分结果备份到 JSON 文件"""
+        self.log_step("step6", "备份切片")
+
+        local_dir = state.get("file_dir", "")
+        if not local_dir:
+            self.logger.debug("未设置 file_dir，跳过备份")
+            return
+
+        try:
+            os.makedirs(local_dir, exist_ok=True)
+            output_path = os.path.join(local_dir, "chunks.json")
+            with open(output_path, "w", encoding="utf-8") as f:
+                json.dump(sections, f, ensure_ascii=False, indent=2)
+            self.logger.info(f"已备份到: {output_path}")
+
+        except Exception as e:
+            self.logger.warning(f"备份失败: {e}")
+
+    def _get_inputs(self, state: ImportGraphState) -> Tuple[str, str, int, int]:
+
+        self.log_step("step1", "切分文档的参数校验以及获取...")
 
         config = get_config()
         # 1. 获取md_content
@@ -70,7 +118,7 @@ class DocumentSpliterNode(BaseNode):
         }
 
         """
-        self.log_step("step2", "根据标题进行切割")
+        self.log_step("step2", "根据标题进行切分...")
         # 1. 定义变量
         in_fence = False
         body_lines = []
@@ -148,14 +196,14 @@ class DocumentSpliterNode(BaseNode):
             List[section]
 
         """
-        self.log_step("step2", "切分长内容以及合并段内容")
+        self.log_step("step3", "切分及合并...")
 
         # 1. 切分
         current_sections = []
         for section in sections:
             current_sections.extend(self.split_long_section(section, max_content_length))
 
-        # 2. 合并
+        # 2. 合并(2.1 递归切分器切分以及原来文档中的标题下的内容比较小)
         final_sections = self.merge_short_section(current_sections, min_content_length)
 
         # 3. 返回
@@ -180,40 +228,45 @@ class DocumentSpliterNode(BaseNode):
         file_title = section.get('file_title')  # 不可能是空
         parent_title = section.get('parent_title')  # 不可能是空
 
-        # 2. 对标题做校验(感觉)
+        # 2. 判断表格
+        if "<table>" in body:
+            self.logger.info("检测到了表格数据...")
+            body = MarkdownTableLinearizer.process(body)
+
+        # 3. 对标题做校验(感觉)
         TITLE_MAX_LENGTH = 50
         if len(title) > TITLE_MAX_LENGTH:
             self.logger.warning(f"检测文件{file_title}对应的{title}长度过长...")
             title = title[:50]
 
-        # 3. 拼接title前缀
+        # 4. 拼接title前缀
         title_prefix = f"{title}\n\n"
 
-        # 4. 计算总长度(len(title_prefix)+len(body))
+        # 5. 计算总长度(len(title_prefix)+len(body))
         total_length = len(title_prefix) + len(body)
 
-        # 5. 判断小于或者刚好满足阈值（section内容比较短）
+        # 6. 判断小于或者刚好满足阈值（section内容比较短）
         if total_length <= max_content_length:
             return [section]
 
-        # 6.计算body可用的长度
+        # 7.计算body可用的长度
         body_length = max_content_length - len(title_prefix)
 
         if body_length <= 0:
             return [section]
 
-        # 7. 切分   # 7.1 对谁切【body】 # 7.2 用谁切[1)手写 2)langchain提供的切分器:TextSpliter/TokenSpliter/LenghtSpliter/）:chunkoverlap:块与块之间的重叠/:通用的递归切分器【"\n\n",'\n',' ',''[兜底：一个一个字符]】]
-        # 7.1 定义递归的文档切分器对象
+        # 8. 切分   # 7.1 对谁切【body】 # 7.2 用谁切[1)手写 2)langchain提供的切分器:TextSpliter/TokenSpliter/LengthSpliter/）:chunkoverlap:块与块之间的重叠/:通用的递归切分器【"\n\n",'\n',' ',''[兜底：一个一个字符]】]
+        # 8.1 定义递归的文档切分器对象
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=body_length,
                                                        chunk_overlap=0,
                                                        separators=["\n\n", "\n", "。", "！", "？", "；", ".", "!", "?", ";",
                                                                    " ", ""],
                                                        keep_separator=False
                                                        )
-        # 7.2 进行切割
+        # 8.2 进行切割
         texts = text_splitter.split_text(body)
 
-        # 7.2 判断【长度：0 ：场景：body没有：长度：1:场景：标题下面的内容很少】
+        # 8.3 判断【长度：0 ：场景：body没有：长度：1:场景：标题下面的内容很少】
         if len(texts) <= 1:
             return [section]
 
@@ -226,57 +279,124 @@ class DocumentSpliterNode(BaseNode):
                 "parent_title": parent_title,
                 "part": f"{index + 1}"  # 标记序号
             })
+
+        # 8.4 返回
         return sub_section
 
     def merge_short_section(self, current_sections: List[Dict[str, Any]], min_content_length: int):
         """
-        贪心累加算法
+        贪心累加算法:
+
+        两个局限性：
+        1. 撑破最小的阈值：大一点不用管
+        2. 孤儿小块：也不用管（大量都是小块）
         Args:
             current_sections:
             min_content_length:
-
         Returns:
 
         """
+        # 1. 定义变量
         current_section = current_sections[0]
-        current_section_body = current_section.get('body')
-        fina_sections = []  # 最终的箱子
+        final_sections = []  # 最终的箱子
 
+        # 2. 遍历以及合并
         for next_section in current_sections[1:]:
             # 同源
             same_parent = (current_section['parent_title'] == next_section['parent_title'])
 
-            if same_parent and len(current_section_body) < min_content_length:
-                # body的合并(更新当前的section_body)
+            if same_parent and len(current_section.get('body')) < min_content_length:
+                # body的合并(更新当前的section的body)
                 current_section['body'] = (
-                        current_section.get('body').rstrip() + next_section.get('body').lstrip()
+                        current_section.get('body').rstrip() + "\n\n" + next_section.get('body').lstrip()
                 )
 
-                # TODO(part、标题)
+                # 更新current_title  简单的能涵盖住合并进来的内容
+                current_section['title'] = current_section['parent_title']
+                current_section['part'] = 0
             else:
-                # 1. 将原来current_section进行封箱
-                fina_sections.append(current_section)
-                # 2. 更新next_section
+                #  将原来current_section进行封箱
+                final_sections.append(current_section)
+                #  更新next_section
                 current_section = next_section
 
         # 最后一个人（封装起来）
-        fina_sections.append(current_section)
+        final_sections.append(current_section)
 
-        # 对所有section的part做处理
+        # 4. 对所有section的part做处理 (为每一个父标题设置对应的part计数器)
+        part_counter = {}
+        result = []
+        for final_section in final_sections:
+            if "part" in final_section:
+                # 获取section的父标题
+                parent_title = final_section.get('parent_title')
 
+                # 给计数器赋值
+                part_counter[parent_title] = part_counter.get(parent_title, 0) + 1
 
+                # 获取计数器的值
+                new_part = part_counter[parent_title]
+
+                final_section['part'] = new_part
+
+                final_section['title'] = final_section['title'] + f"- {new_part}"
+
+            result.append(final_section)
+
+        return result
+
+    def _assemble_chunk(self, final_chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+         最终组合chunk
+        Args:
+            final_chunks:
+
+        Returns:
+
+        """
+
+        self.log_step("step4", "组装最终的切片信息...")
+        chunks = []
+        for chunk in final_chunks:
+
+            # 1. 获取chunk的信息
+            title = chunk.get('title')
+            file_title = chunk.get('file_title')
+            parent_title = chunk.get('parent_title')
+            body = chunk.get('body')
+            content = f"{title}\n\n{body}"
+
+            # 2. 构建最终chunk对象
+            assemble_chunk = {
+                "title": title,
+                "file_title": file_title,
+                "parent_title": parent_title,
+                "content": content,
+            }
+
+            # 3.判断part是否存在
+            if "part" in chunk:
+                assemble_chunk['part'] = chunk.get('part')
+
+            chunks.append(assemble_chunk)
+
+        return chunks
 
 
 if __name__ == '__main__':
+    setup_logging()
+
     document_node = DocumentSpliterNode()
     # 构造状态字典
-    file_path = r"D:\develop\develop\workspace\pycharm\251020\shopkeeper_brain\knowledge\test\import\test_spilt.md"
+    # file_path = r"D:\develop\develop\workspace\pycharm\251020\shopkeeper_brain\knowledge\test\import\test_spilt_1.md"
+    file_path = r"D:\develop\develop\workspace\pycharm\251020\shopkeeper_brain\docs\hybrid_auto\万用表的使用.md"
     with open(file_path, "r", encoding="utf-8") as f:
         content = f.read()
 
     state = {
         "file_title": "万用表的使用",
         "md_content": content,
+        "file_dir":r"D:\develop\develop\workspace\pycharm\251020\shopkeeper_brain\knowledge\processor\import_process\import_temp_dir\万用表的使用\hybrid_auto"
 
     }
     document_node.process(state)
