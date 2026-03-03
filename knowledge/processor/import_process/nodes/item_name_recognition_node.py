@@ -1,15 +1,13 @@
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 
-from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import SystemMessage, HumanMessage
-from langchain_openai.embeddings import OpenAIEmbeddings
-# from langchain.embeddings import init_embeddings  # 1.x(用的时候小心)
 
 from knowledge.processor.import_process.base import BaseNode, setup_logging
 from knowledge.processor.import_process.state import ImportGraphState
-from knowledge.processor.import_process.exceptions import ValidationError
+from knowledge.processor.import_process.exceptions import ValidationError, EmbeddingError
 from knowledge.processor.import_process.config import get_config
-from knowledge.utils.llm_client import get_llm_client
+from knowledge.utils.llm_client_util import get_llm_client
+from knowledge.utils.bge_me_embedding_util import get_beg_m3_embedding_model
 from knowledge.processor.import_process.prompts.item_name_prompt import ITEM_NAME_SYSTEM_PROMPT, \
     ITEM_NAME_USER_PROMPT_TEMPLATE
 
@@ -18,7 +16,6 @@ class ItemNameRecognitionNode(BaseNode):
     name = "item_name_recognition"
 
     def process(self, state: ImportGraphState) -> ImportGraphState:
-
         # 1. 参数校验
         file_title, chunks, config = self._validate_inputs(state)
 
@@ -29,11 +26,31 @@ class ItemNameRecognitionNode(BaseNode):
         item_name = self._recognition_item_name_by_llm(file_title, item_name_context)
 
         # 4. 嵌入商品名(嵌入模型：OpenAI:OpenAIEmbeddings dashscope:text_embedding_v1(2/3/4)--->稠密向量：主要作用（语义相似性）、稀疏向量主要作用（关键词相似）【bgem3】)
-
+        dense, sparse = self._embedding_item_name(item_name)
 
         # 5. 存储到Milvus数据库
 
-        # 5. 返回
+
+
+    def _embedding_item_name(self, item_name: str) -> Optional[Tuple[list, dict[Any, Any]]]:
+        try:
+            # 1. 获取嵌入模型s
+            embedding_model = get_beg_m3_embedding_model()
+
+            # 2. 嵌入item_name
+            embedding_result = embedding_model.encode_documents([item_name])
+
+            # 3. 获取稠密和稀疏向量
+            dense = embedding_result['dense'][0].tolist()
+            start_index = embedding_result['sparse'].indptr[0]
+            end_index = embedding_result['sparse'].indptr[1]
+            weights = embedding_result['sparse'].data[start_index:end_index].tolist()
+            tokenIds = embedding_result['sparse'].indices[start_index:end_index].tolist()
+            sparse = dict(zip(tokenIds, weights))
+            return dense, sparse
+        except Exception as e:
+            self.log_step(f"嵌入商品名:{item_name}失败,原因是：{str(e)}")
+            raise EmbeddingError(f"嵌入商品名:{item_name}失败,原因是：{str(e)}", self.name)
 
     def _validate_inputs(self, state: ImportGraphState):
         self.log_step("step1", "检验输入参数")
@@ -60,7 +77,6 @@ class ItemNameRecognitionNode(BaseNode):
         return file_title, chunks, config
 
     def _prepare_item_name_context(self, chunks: Optional[List[Dict[str, Any]]], config):
-
         self.log_step("step2", "构建商品名提取的上下文")
 
         result = []
@@ -88,7 +104,6 @@ class ItemNameRecognitionNode(BaseNode):
         return "\n\n".join(result)[:config.item_name_chunk_size]
 
     def _recognition_item_name_by_llm(self, file_title: str, item_name_context: str) -> str:
-
         # 1. 获取LLM客户端
         llm_client = get_llm_client()
         if llm_client is None:
