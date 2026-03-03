@@ -22,6 +22,7 @@ class ImportConfig:
     min_content_length: int = 500  # 合并短内容的最小长度
     overlap_sentences: int = 1  # 句子级切分时的重叠句数
     item_name_chunk_k: int = 3  # 商品名识别时使用的切片数量
+    item_name_chunk_size: int = 2500  # 商品名识别时使用的切片内容长度
 
     image_extensions: Set[str] = field(
         default_factory=lambda: {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"}
