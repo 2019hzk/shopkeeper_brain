@@ -202,6 +202,7 @@ class ItemNameRecognitionNode(BaseNode):
         # 1.2 标量字段的约束
         schema.add_field(field_name="file_title", datatype=DataType.VARCHAR, max_length=65535)
         schema.add_field(field_name="item_name", datatype=DataType.VARCHAR, max_length=65535)
+        schema.add_field(field_name="number", datatype=DataType.INT32)
 
         # 1.3 向量字段的约束
         # 1.3.1 稠密向量字段约束

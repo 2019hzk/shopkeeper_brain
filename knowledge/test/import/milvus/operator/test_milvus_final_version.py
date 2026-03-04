@@ -61,13 +61,11 @@ if __name__ == '__main__':
         }
     )
     # 标量字段添加索引（TODO）
-    # index_params.add_index(
-    #     field_name="my_varchar",  # Name of the vector field to be indexed
-    #     index_type="NGRAM",  # Type of the index to create
-    #     index_name="ngram_index",  # Name of the index to create
-    #     min_gram=2,  # Minimum substring length (e.g., 2-gram: "st")
-    #     max_gram=3
-    # )
+    index_params.add_index(
+        field_name="my_varchar",  # Name of the vector field to be indexed
+        index_type="INVERTED",  # Type of the index to create
+        index_name="inverted_index",  # Name of the index to create
+    )
 
     # 高级自动
     client.create_collection(
