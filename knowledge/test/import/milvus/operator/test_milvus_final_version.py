@@ -11,7 +11,7 @@ create_collection(collection_name,schema,index_params)---自动 高阶版本（�
 import time
 
 from pymilvus import MilvusClient, DataType
-from knowledge.utils.bge_me_embedding_util import get_beg_m3_embedding_model
+from knowledge.utils.bge_m3_embedding_util import get_beg_m3_embedding_model
 
 if __name__ == '__main__':
 
@@ -60,14 +60,14 @@ if __name__ == '__main__':
             "nlist": 64,  # Number of clusters for the index
         }
     )
-    # 标量字段添加索引
-    index_params.add_index(
-        field_name="my_varchar",  # Name of the vector field to be indexed
-        index_type="NGRAM",  # Type of the index to create
-        index_name="ngram_index",  # Name of the index to create
-        min_gram=2,  # Minimum substring length (e.g., 2-gram: "st")
-        max_gram=3
-    )
+    # 标量字段添加索引（TODO）
+    # index_params.add_index(
+    #     field_name="my_varchar",  # Name of the vector field to be indexed
+    #     index_type="NGRAM",  # Type of the index to create
+    #     index_name="ngram_index",  # Name of the index to create
+    #     min_gram=2,  # Minimum substring length (e.g., 2-gram: "st")
+    #     max_gram=3
+    # )
 
     # 高级自动
     client.create_collection(
@@ -96,15 +96,17 @@ if __name__ == '__main__':
     # 6. 插入数据
     res = client.insert(collection_name="test_create_collection_v3", data=data)
 
-    time.sleep(2)
-    query_vectors = embedding_model.encode_queries(["谁是艾伦图灵?"])
-
-    # 7. 查询
-    res = client.search(
-        collection_name="test_create_collection_v3",  # Collection name
-        anns_field="my_vector",
-        data=[query_vectors['dense'][0].tolist()],
-        output_fields=["my_varchar", "subject"],  # Query vector
-        limit=3,
-    )
     print(res)
+
+    # time.sleep(2)
+    # query_vectors = embedding_model.encode_queries(["谁是艾伦图灵?"])
+    #
+    # # 7. 查询（向量字段的查询）
+    # res = client.search(
+    #     collection_name="test_create_collection_v3",  # Collection name
+    #     anns_field="my_vector",
+    #     data=[query_vectors['dense'][0].tolist()],
+    #     output_fields=["my_varchar", "subject"],  # Query vector
+    #     limit=3,
+    # )
+    # print(res)

@@ -1,7 +1,7 @@
 import time
 
 from pymilvus import MilvusClient
-from knowledge.utils.bge_me_embedding_util import get_beg_m3_embedding_model
+from knowledge.utils.bge_m3_embedding_util import get_beg_m3_embedding_model
 
 if __name__ == '__main__':
 

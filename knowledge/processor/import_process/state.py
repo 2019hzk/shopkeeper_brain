@@ -50,7 +50,7 @@ class ImportGraphState(TypedDict, total=False):
 
     file_title: str  # 文件标题（不含扩展名）
 
-    item_name: str  # 识别出的商品/产品名称
+    item_name: str  # 识别出的商品/产品名称(方便程序员用)
 
     # ==================== 处理中间数据 ====================
 

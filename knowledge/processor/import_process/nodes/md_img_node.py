@@ -6,7 +6,6 @@ from collections import deque
 from pathlib import Path
 from typing import Tuple, List, Deque
 from openai import OpenAI
-
 from knowledge.utils.minio_util import get_minio_client
 from knowledge.processor.import_process.base import BaseNode, setup_logging
 from knowledge.processor.import_process.state import ImportGraphState

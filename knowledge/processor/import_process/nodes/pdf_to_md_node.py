@@ -2,7 +2,6 @@ import json
 import subprocess
 from pathlib import Path
 from typing import Tuple
-
 from knowledge.processor.import_process.base import BaseNode, setup_logging
 from knowledge.processor.import_process.state import ImportGraphState
 from knowledge.processor.import_process.exceptions import ValidationError, FileProcessingError, PdfConversionError

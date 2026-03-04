@@ -4,7 +4,7 @@ from knowledge.processor.import_process.base import BaseNode, setup_logging
 from knowledge.processor.import_process.state import ImportGraphState
 from knowledge.processor.import_process.config import get_config
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from knowledge.utils.markdown_utils import MarkdownTableLinearizer
+from knowledge.utils.markdown_util import MarkdownTableLinearizer
 
 
 class DocumentSpliterNode(BaseNode):
