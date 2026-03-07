@@ -23,13 +23,16 @@ def get_beg_m3_embedding_model():
     device = os.getenv('BGE_DEVICE', 'cpu')
     use_fp16_str = os.getenv('BGE_FP16', 'False')
     use_fp16 = use_fp16_str.lower() in ('true', '1', 'yes')
+    try:
+        # 3. 定义嵌入模型对象 # 默认维度1024
+        bge_m3_ef = BGEM3EmbeddingFunction(
+            model_name=model_name,
+            device=device,
+            use_fp16=use_fp16
+        )
+    except Exception as e:
+        return None
 
-    # 3. 定义嵌入模型对象 # 默认维度1024
-    bge_m3_ef = BGEM3EmbeddingFunction(
-        model_name=model_name,
-        device=device,
-        use_fp16=use_fp16
-    )
     # 4. 返回
     return bge_m3_ef
 
