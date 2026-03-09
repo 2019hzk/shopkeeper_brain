@@ -95,7 +95,7 @@ class ImportConfig:
     embedding_batch_size: int = 8
 
     # ==================== 速率限制 ====================
-    requests_per_minute: int = 9  # 图片总结 API 速率限制
+    requests_per_minute: int = 15  # 图片总结 API 速率限制
 
     @classmethod
     def from_env(cls) -> "ImportConfig":

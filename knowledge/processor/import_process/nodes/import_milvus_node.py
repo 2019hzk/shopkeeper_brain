@@ -175,8 +175,8 @@ class ImportMilvusNode(BaseNode):
             return state
 
         # 4. 获取集合名字
-        # collection = getattr(config, 'chunks_collection', 'test_chunks_collection')
-        collection = "test_chunk"
+        collection = getattr(config, 'chunks_collection')
+
 
         # 5.确保集合存在（判断集合是否有、没有 创建新的【schema index】）
         self._ensure_has_collection(milvus_client, collection, dim)

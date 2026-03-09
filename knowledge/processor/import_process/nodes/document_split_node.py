@@ -7,7 +7,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from knowledge.utils.markdown_util import MarkdownTableLinearizer
 
 
-class DocumentSpliterNode(BaseNode):
+class DocumentSplitNode(BaseNode):
     name = "document_split_node"
 
     def process(self, state: ImportGraphState) -> ImportGraphState:
