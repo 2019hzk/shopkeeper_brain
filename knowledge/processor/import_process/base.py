@@ -10,6 +10,8 @@ import logging
 
 from knowledge.processor.import_process.config import ImportConfig, get_config
 from knowledge.processor.import_process.exceptions import ImportProcessError
+from knowledge.utils.task_util import add_running_task, add_done_task
+
 T = TypeVar("T")  # 泛型状态类型
 
 
@@ -61,17 +63,23 @@ class BaseNode(ABC):
         Raises:
             ImportProcessError: 节点执行失败时抛出
         """
-
-        self.logger.info(f"--- {self.name} 开始 ---")
-
-
+        task_id = state.get("task_id", "")
         try:
+            # 1. 开始准备执行节点
+            self.logger.info(f"--- {self.name} 开始 ---")
+            if task_id:
+                # 1.1 更新节点状态
+                add_running_task(task_id, self.name)
+
+            # 2. 执行节点
             result = self.process(state)
+
+            # 3. 执行节点成功
             self.logger.info(f"--- {self.name} 完成 ---")
+            if task_id:
+                # 3.1 更新状态
+                add_done_task(task_id, self.name)
             return result
-        except ImportProcessError:
-            # 已经是自定义异常，直接抛出
-            raise
         except Exception as e:
             self.logger.error(f"{self.name} 执行失败: {e}")
             raise ImportProcessError(
@@ -107,7 +115,6 @@ class BaseNode(ABC):
         if message:
             log_msg += f" {message}"
         self.logger.info(log_msg)
-
 
 
 # 配置日志格式

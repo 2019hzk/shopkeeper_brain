@@ -386,7 +386,7 @@ class DocumentSplitNode(BaseNode):
 if __name__ == '__main__':
     setup_logging()
 
-    document_node = DocumentSpliterNode()
+    document_node = DocumentSplitNode()
     # 构造状态字典
     # file_path = r"D:\develop\develop\workspace\pycharm\251020\shopkeeper_brain\knowledge\test\import\test_spilt_1.md"
     file_path = r"D:\develop\develop\workspace\pycharm\251020\shopkeeper_brain\docs\hybrid_auto\万用表的使用.md"

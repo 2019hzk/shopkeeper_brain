@@ -80,7 +80,7 @@ def create_import_graph() -> CompiledStateGraph:
     return graph_pineline.compile()
 
 
-graph_app = create_import_graph()
+kb_import__graph_app = create_import_graph()
 
 
 # 测试使用
@@ -95,7 +95,7 @@ def run_import_graph(import_file_path: str, file_dir: str):
 
     # 2. 调用stream(用流式获取每一个节点的处理情况：event事件[节点名字 节点处理后的状态])
     final_state = None
-    for event in graph_app.stream(init_state):
+    for event in kb_import__graph_app.stream(init_state):
         for node_name, state in event.items():
             print(f"运行节点的:{node_name}")
             final_state = state
