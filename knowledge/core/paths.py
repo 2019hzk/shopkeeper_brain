@@ -1,5 +1,4 @@
 import os
-from functools import lru_cache
 
 # 项目根目录（.当前目录 ..上一层目录）D:\develop\develop\workspace\pycharm\251020\shopkeeper_brain\knowledge
 KNOWLEDGE_ROOT=os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
