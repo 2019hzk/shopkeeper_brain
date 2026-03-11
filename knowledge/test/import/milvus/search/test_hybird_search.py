@@ -160,7 +160,7 @@ def hybrid_search(client, embedding_model, query_text, limit=5):
 
     # 解析结果
     return [
-        {"item_name": hit["entity"]["item_name"], "score": hit["distance"]}
+        {"item_name": hit["entity"]["item_name"], "score": hit["distance"]    }
         for hit in hits[0]
     ]
 
