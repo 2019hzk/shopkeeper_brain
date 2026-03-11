@@ -29,11 +29,15 @@ class ItemNameAligner():
         search_result: List[Dict[str, Any]] = self._match_vector(item_names)
 
         # 2. 评分对齐
+        confirmed, options = self._item_name_score_align(search_result)
 
         # 3. 分数差异过滤
-        return [], []
+        if len(confirmed) > 1:
+            confirmed = self._item_name_score_filter(confirmed, search_result)
 
-    def _match_vector(self, item_names: List[str])->List[Dict[str,Any]]:
+        return confirmed, options
+
+    def _match_vector(self, item_names: List[str]) -> List[Dict[str, Any]]:
         """
         职责：根据LLM提取的商品名，查询向量数据库
         Args:
@@ -60,7 +64,7 @@ class ItemNameAligner():
             return search_results
 
         # 4. 嵌入item_name获取稠密、稀疏向量
-        hybrid_embedding_result = generate_hybrid_embeddings(embedding_model,item_names)
+        hybrid_embedding_result = generate_hybrid_embeddings(embedding_model, item_names)
 
         # 4. 遍历LLM提取的所有商品名
         for index, extract_item_name in enumerate(item_names):
@@ -91,6 +95,116 @@ class ItemNameAligner():
             # 4.4 将构建好的查询结果放入到最终搜索结果中
             search_results.append(item_name_search_result)
         return search_results
+
+    def _item_name_score_align(self, search_results: List[Dict[str, Any]]) -> Tuple[List[str], List[str]]:
+        """
+        主要职责：根据向量数据库检索到的商品名，放到对应的confirmed或者options
+
+        Args:
+            search_result:
+
+        Returns:
+            分数阈值的规则：confirm：0.75   options:0.6
+            分数阈值作为放到confirmed或者options的条件。
+
+            返回值：confirmed有，将confirmed中的商品名 传给下游四路检索
+            返回值：options有，确认下一步，询问到底在咨询哪一款商品。
+            返回值：confirmed没有 options没有，直接告诉没有找到具体的商品名
+            返回值：confirmed有 options有，至少确定了一个商品名，没有必要让用户在次确认这个商品。
+
+            注意：
+            1. 如果像confirmed列表中添加某一次遍历向量数据库查询到的商品名时，发现confirmed已经有该商品名了。
+            2. 如果像confirmed列表中添加某一次遍历向量数据库查询到的商品名时，发现confirmed已经有该商品名了。
+            3. 如果confirmed中已经有某一个商品从向量数据库返回的某个对应的item_name，那么下一次从另外一个商品名中根据向量数据库中返回的同一个item_name 既不能加到confirmed（重复） 也不能加入options中
+            4.如果options中已经有某一个商品从向量数据库返回的某个对应的item_name，那么下一次从另外一个商品名中根据向量数据库中返回的同一个item_name 不能加到options中（重复） 但是可以加入confirm中
+            所以去重的方向是单向的
+        """
+
+        # 1. 定义两个容器
+        confirmed = []
+        options = []  # 条件 阈值0.6 最多只留下3个
+
+        # 2. 遍历向量数据库查询到的所有LLM提取到商品名相关的相似性结果
+        for item_name_search_result in search_results:
+
+            # 2.0 获取LLM提取的商品名
+            extracted_name = item_name_search_result.get('extracted_name')
+
+            # 2.1 对某一给商品名下找到相似的item_name的分数值进行降序
+            matches = sorted(item_name_search_result.get('matches'), key=lambda x: x['score'], reverse=True)
+
+            # 2.2 获取matches中分数值比能进入到confirmed容器阈值大的对象获取到
+            high = [m for m in matches if m.get('score') >= 0.7]  # 测试观察：调整0.7
+
+            # 询问是否能进入到confirmed中
+            if high:
+                # 3.1 准备找最精准的那一个
+                extract = next((h for h in high if str(h['item_name']) == extracted_name), None)
+
+                # 场景A:找到了(最准确)---情况很少见
+                if extract:
+                    picked = extract["item_name"]
+                    # 重复的item_name confirmed中只留一份
+                    if picked not in confirmed:
+                        confirmed.append(picked)
+                # 场景B:一般准确
+                elif len(high) == 1:
+                    picked = high[0]["item_name"]
+                    if picked not in confirmed:
+                        confirmed.append(picked)
+                # 场景C:多个相似
+                else:
+                    # 如果没有找到精确的 & high中还有多个（options合适、confirmed中：选择放到某个容器。）
+                    for h in high[:3]:
+                        picked = h.get('item_name')
+                        if picked not in options and picked not in confirmed:
+                            options.append(picked)
+
+            # 4. 询问是否能进入到options中
+            else:
+                mid = [m for m in matches if
+                       m['score'] >= 0.6 and m.get('item_name') not in options and m.get('item_name') not in confirmed]
+
+                if mid:
+                    for m in mid[:3]:
+                        picked = m.get('item_name')
+                        options.append(picked)
+
+        # 最后返回
+        return confirmed, options[:3]
+
+    def _item_name_score_filter(self, confirmed: List[str], search_results: List[Dict[str, Any]]):
+        """
+        item_names:有三个item_name
+        item_name1:0.9 （最相似的（基准））
+        item_name2:0.88（真实比对）
+        item_name3:0.66（可能误判）
+        分数差的阈值：0.15
+        主要责任：将误判的item_name冲confirmed剔除掉。留下真实的item_name
+        Args:
+            confirmed:
+            search_results:
+        Returns:
+
+        """
+        # 1. 定义字典容器（存储confirmed中item_name在向量数据库中的分数值）
+        item_name_score = {}
+        for search_result in search_results:
+            # 1. 获取matches
+            matches = search_result.get('matches')
+            for m in matches:
+                score = m.get('score')
+                item_name = m.get('item_name')
+                if item_name in confirmed:
+                    item_name_score[item_name] = max(item_name_score.get(item_name) or 0, score)
+
+        # 2. 对item_name_score进行排序
+        sorted_item_name_score = sorted(item_name_score.items(), key=lambda x: x[1], reverse=True)
+
+        # 3. 取出分数值最大的（问题询问的比较明确）
+        max_item_name_score = sorted_item_name_score[0][1]
+        return [name for name, score in item_name_score.items() if max_item_name_score - score <= 0.15]
+
 
 
 class ItemNameExtractor:
@@ -212,4 +326,20 @@ class ItemNameConfirmNode(BaseNode):
             state['answer'] = "抱歉，我无法识别您询问的具体产品名称，请提供更准确的产品名称或型号。"
 
 
+if __name__ == "__main__":
 
+    test_state: QueryGraphState = {
+        # "original_query": "你们店里那款苏伯尔RS-12数字万用表怎么测电压？"
+        # "original_query": "你们店里那款RS-12 数字万用表怎么测试电阻？"
+        # "original_query": "华为擎云W515操作环境支持哪些？以及华为擎云L420 用户手册 中包含操作环境嘛？"
+        "original_query": "RS-12 数字万用表怎么测试电阻？以及华为擎云L420 用户手册 中包含操作环境嘛？"
+    }
+
+    print(f"输入: {json.dumps(test_state, ensure_ascii=False, indent=2)}\n")
+
+    node_item_name_confirm = ItemNameConfirmNode()
+    result = node_item_name_confirm.process(test_state)
+    print(f"确认商品: {result.get('item_names')}")
+    print(f"改写查询: {result.get('rewritten_query')}")
+    if result.get("answer"):
+        print(f"拦截回复: {result.get('answer')}")

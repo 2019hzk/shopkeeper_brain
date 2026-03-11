@@ -52,10 +52,10 @@ class QueryConfig:
 
     # ==================== 商品确认节点配置 ====================
     item_name_high_confidence: float = field(
-        default_factory=lambda: float(os.getenv("ITEM_NAME_HIGH_CONFIDENCE", "0.7"))
+        default_factory=lambda: float(os.getenv("ITEM_NAME_HIGH_CONFIDENCE", "0.7")) # 直接给的（压测给到）--->RAG评估（了解）
     )
     item_name_mid_confidence: float = field(
-        default_factory=lambda: float(os.getenv("ITEM_NAME_MID_CONFIDENCE", "0.6"))
+        default_factory=lambda: float(os.getenv("ITEM_NAME_MID_CONFIDENCE", "0.6"))  # 直接给的（压测给到）--->RAG评估（了解）
     )
     item_name_max_options: int = field(
         default_factory=lambda: int(os.getenv("ITEM_NAME_MAX_OPTIONS", "5"))
