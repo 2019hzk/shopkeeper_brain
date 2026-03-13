@@ -115,4 +115,4 @@ if __name__ == '__main__':
     # 2.打印图结构（ASCII 可视化）# 1. 单独安装：pip install grandalf 2.(单独安装还出错)  【pydantic：定义数据模型 】pip uninstall gradio  3. 单独安装 pip install grandalf 解决冲突
     print("-" * 50)
     print("图结构:")
-    graph_app.get_graph().print_ascii()
+    kb_import__graph_app.get_graph().print_ascii()

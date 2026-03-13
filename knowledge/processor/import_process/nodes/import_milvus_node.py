@@ -48,7 +48,7 @@ _SCALAR_FIELDS: Sequence[ScalarFieldSpec] = (
     ScalarFieldSpec(field_name="title", datatype=DataType.VARCHAR, max_length=65535),
     ScalarFieldSpec(field_name="parent_title", datatype=DataType.VARCHAR, max_length=65535),
     ScalarFieldSpec(field_name="file_title", datatype=DataType.VARCHAR, max_length=65535),
-    # ScalarFieldSpec(field_name="item_name", datatype=DataType.VARCHAR, max_length=65535),
+    ScalarFieldSpec(field_name="item_name", datatype=DataType.VARCHAR, max_length=65535), # 标量字段的过滤检索【注意】
 )
 
 

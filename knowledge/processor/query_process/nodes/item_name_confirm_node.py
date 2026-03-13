@@ -13,7 +13,7 @@ from knowledge.processor.query_process.base import BaseNode, T
 from knowledge.utils.llm_client_util import get_llm_client
 from knowledge.utils.milvus_util import get_milvus_client, create_hybrid_search_requests, execute_hybrid_search_query
 from knowledge.utils.bge_m3_embedding_util import generate_hybrid_embeddings, get_beg_m3_embedding_model
-from knowledge.processor.query_process.prompts.item_name_extract_prompt import ITEM_NAME_EXTRACT_TEMPLATE
+from knowledge.processor.query_process.prompts.kg_query_prompt import ITEM_NAME_EXTRACT_TEMPLATE
 
 
 class ItemNameAligner():
