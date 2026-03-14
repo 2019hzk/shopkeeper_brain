@@ -4,14 +4,14 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-from typing import Dict, Any, List, Tuple
+from typing import List, Tuple
 from langchain_core.messages import SystemMessage, HumanMessage
 from knowledge.processor.query_process.state import QueryGraphState
-from knowledge.processor.query_process.base import BaseNode, T
+from knowledge.processor.query_process.base import BaseNode
 from knowledge.processor.query_process.exceptions import StateFieldError
 
 from knowledge.utils.llm_client_util import get_llm_client
-from knowledge.processor.query_process.prompts.kg_query_prompt import USER_HYDE_PROMPT_TEMPLATE
+from knowledge.prompts.query.query_prompt import USER_HYDE_PROMPT_TEMPLATE
 from knowledge.utils.milvus_util import get_milvus_client, create_hybrid_search_requests, execute_hybrid_search_query
 from knowledge.utils.bge_m3_embedding_util import generate_hybrid_embeddings, get_beg_m3_embedding_model
 

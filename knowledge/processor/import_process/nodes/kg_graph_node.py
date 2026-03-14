@@ -4,14 +4,13 @@ import  threading
 from json import JSONDecodeError
 from typing import Dict, List, Any, Tuple, Set, Optional
 from dataclasses import dataclass, field
-from pathlib import Path
 from langchain_core.messages import HumanMessage, SystemMessage
 from pymilvus import MilvusClient, DataType
 from knowledge.processor.import_process.base import BaseNode
 from knowledge.processor.import_process.config import ImportConfig
 from knowledge.processor.import_process.state import ImportGraphState
 from knowledge.processor.import_process.exceptions import Neo4jError, MilvusError
-from knowledge.processor.import_process.prompts.knowledge_graph_prompt import KNOWLEDGE_GRAPH_SYSTEM_PROMPT
+from knowledge.prompts.upload.import_prompt import KNOWLEDGE_GRAPH_SYSTEM_PROMPT
 from knowledge.utils.milvus_util import get_milvus_client
 from knowledge.utils.neo4j_util import get_neo4j_driver
 from knowledge.utils.llm_client_util import get_llm_client

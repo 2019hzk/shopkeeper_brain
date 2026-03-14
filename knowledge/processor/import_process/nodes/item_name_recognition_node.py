@@ -8,7 +8,7 @@ from knowledge.processor.import_process.config import get_config
 from knowledge.utils.llm_client_util import get_llm_client
 from knowledge.utils.milvus_util import get_milvus_client
 from knowledge.utils.bge_m3_embedding_util import get_beg_m3_embedding_model
-from knowledge.processor.import_process.prompts.item_name_prompt import ITEM_NAME_SYSTEM_PROMPT, \
+from knowledge.prompts.upload.import_prompt import ITEM_NAME_SYSTEM_PROMPT, \
     ITEM_NAME_USER_PROMPT_TEMPLATE
 
 

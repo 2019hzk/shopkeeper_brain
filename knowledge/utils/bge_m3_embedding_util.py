@@ -1,5 +1,5 @@
 import os, logging
-from typing import Optional,List
+from typing import Optional, List
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -35,7 +35,6 @@ def get_beg_m3_embedding_model():
 
     # 4. 返回
     return bge_m3_ef
-
 
 
 def generate_hybrid_embeddings(embedding_model: BGEM3EmbeddingFunction, embedding_documents: List[str]):
@@ -81,3 +80,9 @@ def generate_hybrid_embeddings(embedding_model: BGEM3EmbeddingFunction, embeddin
         return None
 
 
+if __name__ == '__main__':
+    model = get_beg_m3_embedding_model()
+
+    dict = generate_hybrid_embeddings(model, embedding_documents=["我是中国人", "我喜欢自由"])
+
+    print(dict)
