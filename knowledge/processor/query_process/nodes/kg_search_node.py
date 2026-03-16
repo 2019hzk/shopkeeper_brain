@@ -12,6 +12,7 @@ node_query_kg — 知识图谱查询节点。
   node_query_kg()     LangGraph 节点入口函数（薄包装）
 """
 import logging, re, json
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 from json import JSONDecodeError
@@ -25,6 +26,7 @@ from knowledge.utils.llm_client_util import get_llm_client
 from knowledge.utils.bge_m3_embedding_util import get_beg_m3_embedding_model, generate_hybrid_embeddings
 from knowledge.utils.milvus_util import get_milvus_client, create_hybrid_search_requests, execute_hybrid_search_query
 from knowledge.prompts.query.query_prompt import ENTITY_EXTRACT_SYSTEM_PROMPT
+from knowledge.utils.neo4j_util import get_neo4j_driver
 
 # -------------------------------------------------
 # 常量
@@ -36,6 +38,32 @@ from knowledge.prompts.query.query_prompt import ENTITY_EXTRACT_SYSTEM_PROMPT
 
 _ENTITY_NAME_MAX_LENGTH = 15
 _DEFAULT_ENTITY_NAME_ALIGN = 0.5
+
+# -------------------------------------------------
+# Neo4J的信息
+# -------------------------------------------------
+ItemEntityPair = Dict[str, Any]
+EntitySeedNode = Dict[str, Any]
+
+# Neo4j的Cypher语句
+_CYPHER_EXACT_SEEDS = """
+MATCH (n:Entity)
+WHERE n.item_name=$item_name AND n.name=$name
+RETURN  n.item_name as item_name,n.name as name
+LIMIT 1
+"""
+
+# toLower()小写
+_CYPHER_FUZZY_SEEDS = """
+MATCH (n:Entity)
+WHERE toLower(n.name) CONTAINS toLower($entity_name)
+      AND n.item_name = $item_name
+RETURN n.name AS name, n.item_name AS item_name
+LIMIT $limit
+"""
+
+# Neo4j的常量
+_MAX_FUZZY_SEEDS: int = 3
 
 
 # -------------------------------------------------
@@ -108,6 +136,39 @@ def truncate_entity_name_length(entity_name: str) -> str:
 def _item_name_filter_expr(item_names: List[str]) -> str:
     quoted = ", ".join(f"'{item_name}'" for item_name in item_names)
     return f"item_name in [{quoted}]"
+
+
+def _clean_seed_rows(rows:List[Dict[str,Any]])-> List[EntitySeedNode]:
+    """
+    职责：清洗查询种子节点的数据
+    Args:
+        rows:  查询到的结果记录
+
+    Returns:
+        干净的结果记录
+
+    """
+
+    if not rows:
+        return []
+
+    clean_seeds_result: List[EntitySeedNode] = []
+    # 1. 遍历
+    for row in rows:
+        # 1.1 获取item_name
+        item_name = row.get('item_name', '').strip()
+        # 1.2 获取entity_name
+        entity_name = row.get('name', '').strip()
+        # 1.3 判断
+        if not item_name or not entity_name:
+            continue
+        # 1.4 封装一下
+        clean_seeds_result.append({
+            "item_name": item_name,
+            "entity_name": entity_name
+        })
+    # 2. 返回
+    return clean_seeds_result
 
 
 class _EntityExtractor:
@@ -186,7 +247,7 @@ class _EntityAligner:
 
         """
 
-        fallback_result = {"entities_aligned": [], "entity_elements": []}
+        fallback_result = {"entities_aligned_name": [], "entities_aligned_elements": []}
         # 1. 判断实体名是否有
         if not entity_names:
             return fallback_result
@@ -225,24 +286,36 @@ class _EntityAligner:
 
         for index, entity_name in enumerate(entity_names):
             # 7.1 对齐一个实体的
-            align_one_result: Dict[str, Any] = self._align_one(milvus_client,
-                                                               self._collection_name,
-                                                               item_name_filtered_expr,
-                                                               embedding_result_dense,
-                                                               embedding_result_sparse,
-                                                               index,
-                                                               entity_name)
-            # 7.2 构建实体名字
-            aligned_entity_name = align_one_result.get('aligned')
-            # 防御
-            if aligned_entity_name not in seen:
-                seen.add(aligned_entity_name)
-                aligned_entities_name.append(aligned_entity_name)
+            align_one_result: List[Dict[str, Any]] = self._align_one(milvus_client,
+                                                                     self._collection_name,
+                                                                     item_name_filtered_expr,
+                                                                     embedding_result_dense,
+                                                                     embedding_result_sparse,
+                                                                     index,
+                                                                     entity_name)
 
-            # 7.3 构建对齐后的实体详细信息
-            aligned_entity_elements.append(align_one_result)
+            # 7.2 将商品对齐结果存储到最终结果中
+            aligned_entity_elements.extend(align_one_result)
+
+            # 7.3 遍历商品下的对齐结果
+            for detail in align_one_result:
+                # a) 获取对齐后的实体名
+                aligned_name = detail.get("aligned")
+
+                # b) 获取商品名
+                item_name = detail.get("item_name")
+
+                # c) 判断对齐名是否有
+                if aligned_name:
+
+                    # 去重 同名实体在不同商品下都保留
+                    key = (item_name, aligned_name)
+                    if key not in seen:
+                        seen.add(key)
+                        aligned_entities_name.append(aligned_name)
 
         self._logger.info(f"对齐后的实体个数 {len(aligned_entities_name)} 实体的名字：{aligned_entities_name}")
+
         return {
             "entities_aligned_name": aligned_entities_name,
             "entities_aligned_elements": aligned_entity_elements
@@ -254,7 +327,7 @@ class _EntityAligner:
                    embedding_result_dense: List,
                    embedding_result_sparse: List,
                    index: int,
-                   entity_name: str):
+                   entity_name: str) -> List[Dict[str, Any]]:
 
         """
         对齐指定实体名
@@ -265,16 +338,14 @@ class _EntityAligner:
             embedding_result_dense:
             embedding_result_sparse:
             index:
-
         Returns:
-
         """
         dense_vector = embedding_result_dense[index]
         sparse_vector = embedding_result_sparse[index]
 
         # 1. 判断实体名的稠密和稀释向量
         if not dense_vector or not sparse_vector:
-            return {"original": entity_name, "aligned": "", "context": "", "reason": "vector values is not exist "}
+            return [{"original": entity_name, "aligned": "", "context": "", "reason": "vector values is not exist "}]
 
         # 2. 创建混合搜索请求
         hybrid_search_requests = create_hybrid_search_requests(dense_vector=dense_vector,
@@ -291,48 +362,173 @@ class _EntityAligner:
                                            )
 
         # 4. 解析结果
-        if not reps or not reps[0]:
-            return {"original": entity_name, "aligned": "", "context": "", "reason": "search result  is Empty "}
+        hits = reps[0] if reps else []
+        if not hits:
+            return [{"original": entity_name, "aligned": "", "score": "", "reason": "no_hit"}]
 
-        # 5. 获取结果
-        best_entity = self._pick_best_entity_name(reps[0])
+        # 4.1  按 item_name 分组，每组取最高分
+        best_by_item: Dict[str, Dict] = {}
+        for hit in hits:
+            # a) 获取实体
+            entity = hit.get("entity")
 
-        # 6. 返回数据结构
-        return {
-            "original": entity_name,
-            "aligned": best_entity['entity_name'],
-            "source_chunk_id": best_entity['source_chunk_id'],
-            "item_name": best_entity['item_name'],
-            "context": best_entity['context'],
-            "reason": "top1"
-        }
+            # b) 从实体中获取
+            item_name = entity.get("item_name").strip()
 
-    def _pick_best_entity_name(self, search_entities_name_result: List[Dict[str, Any]]) -> Dict[str, Any]:
+            # c) 只保留每个 item_name 下的第一个（即最高分）
+            if item_name not in best_by_item:
+                best_by_item[item_name] = hit
+
+        # 4.2 是否有最好的item_name
+        if not best_by_item:
+            return [{"original": entity_name, "aligned": "", "score": None, "reason": "no_valid_item_name"}]
+
+        # 4.3  item_name 分组输出结果，过滤低于阈值的
+        results: List[Dict[str, Any]] = []
+        for item_name, best in best_by_item.items():
+            # a) 获取最好的那一个分数
+            score = best.get("distance")
+
+            # b) 判断分数值
+            if float(score) < float(_DEFAULT_ENTITY_NAME_ALIGN):
+                continue
+
+            # c) 获取实体信息
+            ent = best.get("entity")
+
+            # d) 将不同商品下最好的实体名添加到结果集中
+            results.append({
+                "original": entity_name,
+                "aligned": ent.get("entity_name"),
+                "score": score,
+                "item_name": item_name,
+                "source_chunk_id": ent.get("source_chunk_id"),
+                "reason": "top1_per_item",
+            })
+
+        # 4.4 全部低于阈值时返回未命中
+        if not results:
+            return [{"original": entity_name, "aligned": "", "score": None, "reason": "all_below_threshold"}]
+
+        return results
+
+
+class _Neo4jGraphReader:
+    """
+    职责：所有对Neo4j的读操作
+    1. 种子节点的查询（1.1 精确查询 1.2 降级走模糊查询兜底 ）
+    2. 查询种子节点一跳关系（双向：种子节点指向另外的节点，以及另外的节点指向种子节点） 保留完整的关系
+    3. 根据所有的节点（种子节点以及邻居节点）方向查询chunk(item_name，id)
+    4. 根据所有的chunk_id 查询milvus得到所有的chunk
+
+    """
+
+    def __init__(self, database: str):
+        self._database = database
+        self._logger = logging.getLogger(self.__class__.__name__)
+
+    def _session(self):
+        # 1.获取驱动
+        neo4j_driver = get_neo4j_driver()
+
+        # 2. 判断驱动是否存在
+        if neo4j_driver is None:
+            raise RuntimeError("Neo4J驱动获取失败")
+
+        # 3. 返回session对象
+        return neo4j_driver.session(database=self._database)
+
+    def find_seed_nodes(self, pairs: List[ItemEntityPair]) -> List[EntitySeedNode]:
         """
-         职责： 从返回的5个实体名字中留下一个实体名
+        职责：根据item_name 以及entity_name 查询种子节点
+        策略：精确查询，只返回一条 模糊查询，返回三条
         Args:
-            param:
+            pairs:  _build_item_entity_pairs方法返回的商品名和实体名的pair对
 
         Returns:
-
+            所有商品名下所有实体名对应的种子节点
         """
-        # 1. 判断是否检索到了
-        if not search_entities_name_result:
-            return None
+        # 1. pair对是否存在
+        if not pairs:
+            return []
 
-        # 2. 获取第一个
-        first_entity = search_entities_name_result[0]
-        if not first_entity:
-            return None
+        final_seeds_result: List[EntitySeedNode] = []
+        # 2. 遍历所有pair对
+        for pair in pairs:
+            # 2.1 获取item_name
+            item_name = pair.get('item_name', '').strip()
+            # 2.2 获取entity_name
+            entity_name = pair.get('entity_name', '').strip()
+            # 2.3 过滤掉无效
+            if not item_name or not entity_name:
+                continue
+            # 2.4 执行cypher语句（1) 精确查询 2）可能要模糊查询）
+            try:
 
-        # 3. 获取第一个实体名的分数值
-        first_entity_name_score = first_entity.get('distance')
+                with self._session() as session:
 
-        # 4. 判断是否超过阈值
-        if not first_entity_name_score:
-            return None
-        # 5. 返回的实体名是第一个且分数超过阈值的（对齐策略）
-        return first_entity if first_entity_name_score > _DEFAULT_ENTITY_NAME_ALIGN else None
+                    # 1.精确查询
+                    exact_rows = session.execute_read(
+                        lambda tx: tx.run(
+                            _CYPHER_EXACT_SEEDS, item_name=item_name, name=entity_name
+                        ).data()
+                    )
+                    if exact_rows:
+                        final_seeds_result.extend(_clean_seed_rows(exact_rows))
+                        continue
+                    # 2. 模糊查询
+                    fuzzy_rows = session.execute_read(
+                        lambda tx: tx.run(
+                            _CYPHER_FUZZY_SEEDS, item_name=item_name, name=entity_name, limit=_MAX_FUZZY_SEEDS
+                        ).data()
+                    )
+                    final_seeds_result.extend(_clean_seed_rows(fuzzy_rows))
+
+            except Exception as e:
+                self._logger.error(f"获取种子节点失败,原因 :{str(e)}")
+                return []
+
+        self._logger.info(f"获取种子节点 {len(final_seeds_result)} 个")
+        return final_seeds_result
+
+
+def _build_item_entity_pairs(aligned_entities_info: List[Dict[str, Any]]) -> List[ItemEntityPair]:
+    """
+    职责：从对齐后的实体详情中获取商品名+实体名的pair对
+    去重：本质同一个商品名下的实体名只留一个, 不同商品名下的实体名都留
+    Args:
+        aligned_entities_info: 对齐后的实体详情列表
+
+    Returns:
+        商品+实体名的pairs
+
+    """
+    # 1. 判断对齐后的实体详情是否存在
+    if not aligned_entities_info:
+        return []
+
+    seen = set()
+    item_entity_pairs = []
+
+    # 2. 遍历对齐后的实体详情
+    for aligned_entity_info in aligned_entities_info:
+        # 2.1 获取商品名item_name
+        item_name = aligned_entity_info.get('item_name', "").strip()
+        # 2.2 获取对齐后的实体名
+        aligned_entity_name = aligned_entity_info.get('aligned', "").strip()
+        # 2.3 商品名&实体名都存在
+        if not (item_name and aligned_entity_name):
+            continue
+        # 2.4 去重
+        key = (item_name, aligned_entity_name)
+        if key not in seen:
+            seen.add(key)
+            item_entity_pairs.append({
+                "item_name": item_name,
+                "entity_name": aligned_entity_name
+            })
+    # 3. 返回
+    return item_entity_pairs
 
 
 class KnowledgeGraphSearchNode(BaseNode):
@@ -371,9 +567,8 @@ class KnowledgeGraphSearchNode(BaseNode):
             raise StateFieldError(node_name=self.name, field_name="item_names", expected_type=list)
 
         # 3. 从重写的问题中踢掉商品名(降噪以及无异议的查询)选择
-        user_query = None
-        for item_name in item_names:
-            user_query = rewritten_query.replace(item_name, '') #
+        pattern = "|".join(re.escape(name) for name in item_names)
+        user_query = re.sub(pattern, "", rewritten_query).strip()
         # 4. 返回
         return user_query, item_names
 
@@ -382,12 +577,25 @@ class KnowledgeGraphSearchNode(BaseNode):
         # 1. 初始化组件
         entity_extractor = _EntityExtractor()
         entity_aligner = _EntityAligner(collection_name=self.config.entity_name_collection)
+        neo4g_graph_reader = _Neo4jGraphReader(database=self.config.neo4j_database)
 
         # 2. 利用提取器提取实体(核心的实体名字留下，就可以通过该实体节点找和该节点有关系的节点)
         entities_name = entity_extractor.extract(user_query=validated_query)
         entities_name_aligned: Dict[str, Any] = entity_aligner.align(entities_name, item_names=validated_item_names)
+        # 2.1 获取所有对齐后的实体名(业务逻辑不使用)
+        aligned_entities_name = entities_name_aligned.get('entities_aligned_name')
+        # 2.2 获取所有对齐后的实体详情（结构信息细粒）
+        aligned_entities_info = entities_name_aligned.get('entities_aligned_elements')
 
-        return entities_name_aligned
+        # 3. 构建商品名+实体名的pair对
+        item_entity_pairs: List[ItemEntityPair] = _build_item_entity_pairs(aligned_entities_info)
+
+        # 4. 根商品名和实体名的pairs 查询种子节点
+        seed_nodes: List[EntitySeedNode] = neo4g_graph_reader.find_seed_nodes(item_entity_pairs)
+
+        # 5.测试种子节点
+        return seed_nodes
+
 
 if __name__ == '__main__':
     kg_search_node = KnowledgeGraphSearchNode()
@@ -395,7 +603,7 @@ if __name__ == '__main__':
         # "rewritten_query": "RS-12数字万用表如何测量直流电压",
         # "rewritten_query": "RS-12数字万用表如何打开背光灯键",
         # "rewritten_query": "RS-12数字万用表更换电池需要注意什么",
-        "rewritten_query": "RS-12 数字万用表更换电池需要注意什么",
+        "rewritten_query": "RS-12数字万用表更换电池需要注意什么",
         # "rewritten_query": "在RS-12 数字万用表中二极管的操作步骤是什么",
         # "rewritten_query": "RS-12数字万",
         # "item_names": ["RS-12数字万用表"]
