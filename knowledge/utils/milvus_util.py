@@ -137,3 +137,39 @@ def execute_hybrid_search_query(milvus_client: MilvusClient,
         return None
 
 
+
+
+
+def fetch_chunks_by_chunk_ids(
+    collection_name: str,
+    chunk_ids,
+    *,
+    output_fields=None,
+    batch_size: int = 100,
+):
+    """
+    通过 chunk_id（主键）批量查询切片字段
+    返回：List[dict]，元素为 Milvus entity（字段字典）。
+    """
+    client = get_milvus_client()
+    if not collection_name:
+        return []
+    if output_fields is None:
+        # 默认返回字段需与 collection schema 保持一致
+        output_fields = ["chunk_id", "content", "title", "file_title", "item_name"]
+
+
+    results = []
+    # 分批，避免一次性过大
+    for i in range(0, len(chunk_ids), batch_size):
+        batch = chunk_ids[i : i + batch_size]
+        #  get（主键直取）
+        try:
+            got = client.get(collection_name=collection_name, ids=batch, output_fields=output_fields)
+            if got:
+                results.extend(got)
+            continue
+        except Exception as e:
+            logger.error(f"Milvus get() 查询失败: {e}")
+
+    return results

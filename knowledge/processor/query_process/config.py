@@ -88,10 +88,10 @@ class QueryConfig:
         default_factory=lambda: int(os.getenv("KG_MAX_TRIPLES_PER_SEED", "50"))
     )
     kg_max_total_triples: int = field(
-        default_factory=lambda: int(os.getenv("KG_MAX_TOTAL_TRIPLES", "200"))
+        default_factory=lambda: int(os.getenv("KG_MAX_TOTAL_TRIPLES", "50"))
     )
     kg_max_total_chunks: int = field(
-        default_factory=lambda: int(os.getenv("KG_MAX_TOTAL_CHUNKS", "200"))
+        default_factory=lambda: int(os.getenv("KG_MAX_TOTAL_CHUNKS", "50"))
     )
 
     # ==================== LLM 配置 ====================

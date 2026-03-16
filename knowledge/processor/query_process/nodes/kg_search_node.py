@@ -44,6 +44,7 @@ _DEFAULT_ENTITY_NAME_ALIGN = 0.5
 # -------------------------------------------------
 ItemEntityPair = Dict[str, Any]
 EntitySeedNode = Dict[str, Any]
+OneHopRelation = Dict[str, Any]
 
 # Neo4j的Cypher语句
 _CYPHER_EXACT_SEEDS = """
@@ -62,8 +63,39 @@ RETURN n.name AS name, n.item_name AS item_name
 LIMIT $limit
 """
 
-# Neo4j的常量
-_MAX_FUZZY_SEEDS: int = 3
+# 查询种子节点的一跳关系
+_CYPHER_ONE_HOP_RELATIONS = """
+
+MATCH (seed:Entity {name:$name,item_name:$item_name})-[r]-(nbr:Entity)
+
+WHERE type(r) <> 'MENTIONED_IN' AND nbr.item_name=$item_name
+
+RETURN 
+  CASE WHEN startNode(r)=seed  THEN  seed.name  ELSE nbr.name END AS head
+  type(r) as rel
+  CASE WHEN  startNode(r)=seed  THEN nbr.name ELSE seed.name END AS tail
+ 
+limit $limit
+"""
+# 根据带权重的节点查询chunk_id
+_CYPHER_LOOKUP_CHUNK = """
+
+UNWIND $weighted_nodes as n
+
+MATCH (e:Entity{e.name=n.entity_name,e.item_name=n.item_name})-[r:MENTIONED_IN]->(c:Chunk{c.item_name=n.item_name})
+
+WITH c,sum(n.weight) AS score, count(e) AS cnt
+
+RETURN c.id AS chunk_id, c.item_name AS item_name, score, cnt
+
+ORDER BY score DESC, cnt DESC,chunk_id DESC
+
+LIMIT $limit
+
+"""
+
+SEED_NODE_WEIGHT = 2.0
+NER_NODE_WEIGHT = 1.0
 
 
 # -------------------------------------------------
@@ -138,7 +170,7 @@ def _item_name_filter_expr(item_names: List[str]) -> str:
     return f"item_name in [{quoted}]"
 
 
-def _clean_seed_rows(rows:List[Dict[str,Any]])-> List[EntitySeedNode]:
+def _clean_seed_rows(rows: List[Dict[str, Any]]) -> List[EntitySeedNode]:
     """
     职责：清洗查询种子节点的数据
     Args:
@@ -423,8 +455,20 @@ class _Neo4jGraphReader:
 
     """
 
-    def __init__(self, database: str):
+    def __init__(self,
+                 database: str,
+                 kg_max_seed_candidates: int,
+                 kg_max_total_seeds: int,
+                 kg_max_triples_per_seed: int,
+                 kg_max_total_triples: int,
+                 kg_max_total_chunks: int
+                 ):
         self._database = database
+        self._kg_max_seed_candidates = kg_max_seed_candidates
+        self._kg_max_total_seeds = kg_max_total_seeds
+        self.kg_max_triples_per_seed = kg_max_triples_per_seed
+        self._kg_max_total_triples = kg_max_total_triples
+        self._kg_max_total_chunks = kg_max_total_chunks
         self._logger = logging.getLogger(self.__class__.__name__)
 
     def _session(self):
@@ -453,6 +497,7 @@ class _Neo4jGraphReader:
             return []
 
         final_seeds_result: List[EntitySeedNode] = []
+
         # 2. 遍历所有pair对
         for pair in pairs:
             # 2.1 获取item_name
@@ -464,25 +509,18 @@ class _Neo4jGraphReader:
                 continue
             # 2.4 执行cypher语句（1) 精确查询 2）可能要模糊查询）
             try:
-
                 with self._session() as session:
+                    # 2.5 执行种子节点查询
+                    candidates_seed_nodes = self._execute_seed_nodes(session, item_name, entity_name,
+                                                                     self._kg_max_seed_candidates)
 
-                    # 1.精确查询
-                    exact_rows = session.execute_read(
-                        lambda tx: tx.run(
-                            _CYPHER_EXACT_SEEDS, item_name=item_name, name=entity_name
-                        ).data()
-                    )
-                    if exact_rows:
-                        final_seeds_result.extend(_clean_seed_rows(exact_rows))
-                        continue
-                    # 2. 模糊查询
-                    fuzzy_rows = session.execute_read(
-                        lambda tx: tx.run(
-                            _CYPHER_FUZZY_SEEDS, item_name=item_name, name=entity_name, limit=_MAX_FUZZY_SEEDS
-                        ).data()
-                    )
-                    final_seeds_result.extend(_clean_seed_rows(fuzzy_rows))
+                    # 2.6 将查询到的种子节点加入到最终列表中
+                    final_seeds_result.extend(candidates_seed_nodes)
+
+                    # 2.7 截取种子节点的个数，防止下游查询关系的时候性能太差（作用不太大）
+                    if len(final_seeds_result) > self._kg_max_total_seeds:
+                        final_seeds_result = final_seeds_result[:self._kg_max_total_seeds]
+                        break
 
             except Exception as e:
                 self._logger.error(f"获取种子节点失败,原因 :{str(e)}")
@@ -490,6 +528,253 @@ class _Neo4jGraphReader:
 
         self._logger.info(f"获取种子节点 {len(final_seeds_result)} 个")
         return final_seeds_result
+
+    def _execute_seed_nodes(self, session, item_name: str, entity_name: str, _kg_max_seed_candidates: int) -> List[
+        EntitySeedNode]:
+        """
+         执行种子节点查询
+        Args:
+            session:  neo4j的驱动
+            item_name: 商品名
+            entity_name: 实体名
+            _kg_max_seed_candidates: 单个商品留下的最大种子节点数
+
+        Returns:
+          List[EntitySeedNode] :找到的种子节点
+        """
+
+        # 1.精确查询
+        exact_rows = session.execute_read(
+            lambda tx: tx.run(
+                _CYPHER_EXACT_SEEDS, item_name=item_name, name=entity_name
+            ).data()
+        )
+        if exact_rows:
+            return _clean_seed_rows(exact_rows)
+
+        # 2. 模糊查询
+        fuzzy_rows = session.execute_read(
+            lambda tx: tx.run(
+                _CYPHER_FUZZY_SEEDS, item_name=item_name, name=entity_name, limit=_kg_max_seed_candidates
+            ).data()
+        )
+        return _clean_seed_rows(fuzzy_rows)
+
+    def find_one_hop_relations(self, seed_nodes: List[EntitySeedNode]) -> List[OneHopRelation]:
+        """
+        职责： 根据种子节点查询一跳的关系（双向），并且过滤掉MENTIONED_IN 关系的节点
+        注意：1. 去重（不允许同一条边出现多次）只能出现一次。 2.图谱中存储的节点和关系结构是什么 查询的时候一定要和存储的我结构保证一致 3. 邻居节点可以是你在一跳范围内指向的节点也可以别人在一跳范围内指向你的节点
+        比如：A->B(类型：认识) A->B(类型：认识) B->A(类型：认识)
+
+        Args:
+            seed_nodes: find_seed_nodes:所有种子节点（所有商品的种子节点）
+
+        Returns:
+            List[OneHopRelation]:item_name/head/rel/tail
+
+        """
+        # 1. 判断种子节点
+        if not seed_nodes:
+            return []
+        seen = set()
+        one_hop_relations_final_result = []
+        # 2. 遍历所有的种子节点
+        for seed_node in seed_nodes:
+            # 2.1 提取item_name
+            item_name = seed_node.get('item_name', "")
+            # 2.2 提取entity_name
+            seed_name = seed_node.get('entity_name', "")
+            # 2.3 判断是否都存在
+            if not item_name or not seed_name:
+                continue
+
+            # 2.4 执行Cypher语句
+            try:
+                with self._session() as session:
+
+                    # a) 查询种子节点的一跳关系
+                    seed_one_hop_relations: List[OneHopRelation] = self._execute_one_hop_relations(session, item_name,
+                                                                                                   seed_name,
+                                                                                                   self.kg_max_triples_per_seed)
+                    if not seed_one_hop_relations:
+                        return []
+
+                    # b) 遍历种子节点所有的关系
+                    for seed_one_hop_relation in seed_one_hop_relations:
+                        # b.1 获取头
+                        head = seed_one_hop_relation.get('head')
+                        # b.2 获取rel
+                        rel = seed_one_hop_relation.get('rel')
+                        # b.3 获取tail
+                        tail = seed_one_hop_relation.get('tail')
+                        # b.4 获取item_name
+                        item_name = seed_one_hop_relation.get('item_name')
+
+                        # b.4 去重（同一条边不能重复出现）同一个商品下，不运行有重复的 不同商品下不能叫重复的边
+                        # 场景：A节点是种子节点 令居也是种子节点（A节点作为种子查询邻居节点的时候已经把他们的关系查找到了）所以当在以邻居节点为种子查询的时候，就会出现重复的边。因此要过滤掉
+                        # 去重key
+                        key = (item_name, head, rel, tail)
+
+                        if key not in seen:
+                            seen.add(key)
+                            one_hop_relations_final_result.append(seed_one_hop_relation)
+
+                    # c) 截取 种子节点的关系，防止超过LLM窗口阈值
+                    if len(one_hop_relations_final_result) > self._kg_max_total_triples:
+                        one_hop_relations_final_result = one_hop_relations_final_result[:self._kg_max_total_triples]
+                        break
+
+                    # d) 返回
+            except Exception as e:
+                self._logger.error(f"查询 {seed_name} 种子节点的一跳关系失败: {str(e)}")
+                return []
+        self._logger.info(f"查询 {len(seed_nodes)} 个种子节点对应的关系:{len(one_hop_relations_final_result)} 条")
+        return one_hop_relations_final_result
+
+    def _execute_one_hop_relations(self, session, item_name: str, seed_name: str, kg_max_triples_per_seed: int) -> List[
+        OneHopRelation]:
+        """
+
+        Args:
+            session: neo4j驱动
+            item_name: 商品名
+            seed_name: 种子节点名字
+            kg_max_triples_per_seed:种子节点最大的关系数
+
+        Returns:
+            List[OneHopRelation]:种子节点的关系
+
+        """
+        # 1. 根据session执行查询方法
+        one_hop_relations = session.execute_read(
+            lambda tx: tx.run(
+                _CYPHER_ONE_HOP_RELATIONS, item_name=item_name, name=seed_name, limit=kg_max_triples_per_seed
+            ).data()
+        )
+
+        # 2. 解析结构
+        if not one_hop_relations:
+            return []
+
+        # 3. 遍历所有的一条关系
+        one_hop_relations_result = []
+        for one_hop_relation in one_hop_relations:
+            # 3.1 提取head
+            head = one_hop_relation.get('head', '').strip()
+            # 3.2 提取rel
+            rel = one_hop_relation.get('rel', '').strip()
+            # 3.3 提取tail
+            tail = one_hop_relation.get('tail', '').strip()
+
+            # 3.4 判断是否存在关系链
+            if not (head and rel and tail):
+                continue
+
+            # 3.5 将关系链添加到最终结果中
+            one_hop_relations_result.append({
+                "head": head,
+                "rel": rel,
+                "tail": tail,
+                "item_name": item_name
+            })
+        return one_hop_relations_result
+
+    def collect_node_weight(self, seed_nodes: List[EntitySeedNode], one_hop_relations: List[OneHopRelation]) -> \
+            List[Dict[str, Any]]:
+        """
+         职责：
+         为种子节点设置权重weight:高=2.0
+         为邻居节点设置权重weigh:低=1.0
+        Args:
+            seed_nodes: 种子节点
+            one_hop_relations:一跳关系
+
+        Returns:
+         所有节点带权重
+        """
+
+        # 1. 判断seed_nodes 是否存在
+        if not seed_nodes:
+            return []
+
+        # 2. 判断 one_hop_relations 是否存在
+        if not one_hop_relations:
+            return []
+        # 存放所有节点（种子节点和邻居节点的权重）
+        weight_map: [Tuple[str, str], float] = {}
+        seen = set()
+        # 3. 遍历所有的种子节点
+        for seed_node in seed_nodes:
+            # 3.1 获取item_name
+            item_name = seed_node.get('item_name')
+            # 3.2 获取节点名
+            seed_name = seed_node.get('entity_name')
+
+            key = (item_name, seed_name)
+            if key not in seen:
+                seen.add(key)
+                weight_map[key] = SEED_NODE_WEIGHT
+
+        # 4. 遍历一跳三元组
+        for one_hop_relation in one_hop_relations:
+
+            # 4.1 获取head
+            head = one_hop_relation.get('head')
+            # 4.2 获取tail
+            tail = one_hop_relation.get('tail')
+
+            # 4.3 获取商品的名字
+            item_name = one_hop_relation.get('item_name')
+
+            # 4.4 为邻居节点赋值权重
+            if (item_name, head) and (item_name, head) not in weight_map:
+                weight_map[(item_name, head)] = NER_NODE_WEIGHT
+
+            if (item_name, tail) and (item_name, tail) not in weight_map:
+                weight_map[(item_name, tail)] = NER_NODE_WEIGHT
+
+        return [{"item_name": it, "entity_name": en, "weight": w}
+                for (it, en), w in weight_map.items()]
+
+    def find_nodes_chunk_id(self, weighted_nodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        根据带权重的节点查询chunk_id
+        并且基于权重和、次数、进行排序
+        Args:
+            weighted_nodes:带权重的节点
+
+        Returns:
+         查询到的chunk_id
+        """
+
+        # 1. 执行Cypher语句
+        try:
+            with self._session() as session:
+                # 1.1 查询语句
+                sorted_node_chunk_id = session.execute_read(lambda tx: tx.run(
+                    _CYPHER_LOOKUP_CHUNK, weighted_nodes=weighted_nodes, limit=self._kg_max_total_chunks
+                ).data())
+
+
+        except Exception as e:
+            self._logger.error(f"反查chunk_id失败,原因:{str(e)}")
+            return []
+
+        hits = []
+        # 2. 处理结果
+        for chunk_row in sorted_node_chunk_id:
+            chunk_id = chunk_row.get('chunk_id', "").strip()
+            item_name = chunk_row.get('item_name', "").strip()
+            score = chunk_row.get('score')
+
+            if chunk_id and item_name:
+                hits.append({
+                    "id": None,
+                    "distance": float(score or 0.0),
+                    "entity": {"chunk_id": str(chunk_id), "item_name": str(item_name)}
+                })
+
+        return hits
 
 
 def _build_item_entity_pairs(aligned_entities_info: List[Dict[str, Any]]) -> List[ItemEntityPair]:
@@ -567,8 +852,15 @@ class KnowledgeGraphSearchNode(BaseNode):
             raise StateFieldError(node_name=self.name, field_name="item_names", expected_type=list)
 
         # 3. 从重写的问题中踢掉商品名(降噪以及无异议的查询)选择
-        pattern = "|".join(re.escape(name) for name in item_names)
-        user_query = re.sub(pattern, "", rewritten_query).strip()
+
+        user_query = rewritten_query
+        for name in item_names:
+            if not name:
+                continue
+            pattern = r"\s*".join(re.escape(ch) for ch in name.replace(" ", ""))
+            user_query = re.sub(pattern, "", user_query, flags=re.IGNORECASE)
+
+        user_query = " ".join(user_query.split()).strip()
         # 4. 返回
         return user_query, item_names
 
@@ -582,6 +874,8 @@ class KnowledgeGraphSearchNode(BaseNode):
         # 2. 利用提取器提取实体(核心的实体名字留下，就可以通过该实体节点找和该节点有关系的节点)
         entities_name = entity_extractor.extract(user_query=validated_query)
         entities_name_aligned: Dict[str, Any] = entity_aligner.align(entities_name, item_names=validated_item_names)
+
+
         # 2.1 获取所有对齐后的实体名(业务逻辑不使用)
         aligned_entities_name = entities_name_aligned.get('entities_aligned_name')
         # 2.2 获取所有对齐后的实体详情（结构信息细粒）
@@ -590,8 +884,15 @@ class KnowledgeGraphSearchNode(BaseNode):
         # 3. 构建商品名+实体名的pair对
         item_entity_pairs: List[ItemEntityPair] = _build_item_entity_pairs(aligned_entities_info)
 
-        # 4. 根商品名和实体名的pairs 查询种子节点
+        # 4. Neo4J操作
+        # 4.1 根商品名和实体名的pairs 查询种子节点
         seed_nodes: List[EntitySeedNode] = neo4g_graph_reader.find_seed_nodes(item_entity_pairs)
+        # 4.2. 根据种子节点查询一跳关系
+        one_hop_relations: List[OneHopRelation] = neo4g_graph_reader.find_one_hop_relations(seed_nodes)
+        # 4.3  根据种子节点(查询到的)以及一跳关系【种子节点/邻居节点】分别为其设置权重
+        weighted_nodes: List[Dict[str, Any]] = neo4g_graph_reader.collect_node_weight(seed_nodes, one_hop_relations)
+        # 4.4 根据带权重的节点反查chunk,并且基于权重给chunk排序（权重排【sum】降序/次数排降序/chunk_id升序）
+        chunk_nodes_sorted: List[Dict[str, Any]] = neo4g_graph_reader.find_nodes_chunk_id(weighted_nodes)
 
         # 5.测试种子节点
         return seed_nodes
