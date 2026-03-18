@@ -888,7 +888,7 @@ class _ChunkBackFiller:
         chunk_id_map = {str(chunk.get('chunk_id')): chunk for chunk in chunks if chunk.get('chunk_id') is not None}
 
         # 5. 根据真实顺序的chunk_id从映射表查询真正的chunk对象
-        return [chunk_id_map.get(str(chunk_id)) for chunk_id in chunk_ids]
+        return [{"entity":chunk_id_map.get(str(chunk_id))} for chunk_id in chunk_ids]
 
     def _collect_chunk_ids(self, chunk_nodes_sorted: List[Dict[str, Any]]) -> List[Union[str, int]]:
         """
