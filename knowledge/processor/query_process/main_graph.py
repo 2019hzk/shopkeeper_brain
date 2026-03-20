@@ -169,7 +169,7 @@ if __name__ == "__main__":
     print(f"  答案: {answer_1[:200]}..." if len(answer_1) > 200 else f"  答案: {answer_1}")
 
     # ---- 测试场景 2：商品名模糊，被拦截 ----
-    # print("\n\n【场景 2】: 商品名模糊，被拦截返回选项")
+    print("\n\n【场景 2】: 商品名模糊，被拦截返回选项")
     # print("-" * 60)
     #
     # mock_state_2 = {

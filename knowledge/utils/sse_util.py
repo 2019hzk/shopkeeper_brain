@@ -28,7 +28,6 @@ def create_sse_queue(task_id: str) -> queue.Queue:
     _task_stream[task_id] = q
     return q
 
-
 def remove_sse_queue(task_id: str):
     """移除指定任务的队列
     不存在 key 默认返回 None

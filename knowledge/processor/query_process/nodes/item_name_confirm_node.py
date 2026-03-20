@@ -14,6 +14,7 @@ from knowledge.utils.llm_client_util import get_llm_client
 from knowledge.utils.milvus_util import get_milvus_client, create_hybrid_search_requests, execute_hybrid_search_query
 from knowledge.utils.bge_m3_embedding_util import generate_hybrid_embeddings, get_beg_m3_embedding_model
 from knowledge.prompts.query.query_prompt import ITEM_NAME_EXTRACT_TEMPLATE
+from knowledge.utils.mongo_history_util import get_recent_messages, update_message_item_names
 
 
 class ItemNameAligner():
@@ -206,7 +207,6 @@ class ItemNameAligner():
         return [name for name, score in item_name_score.items() if max_item_name_score - score <= 0.15]
 
 
-
 class ItemNameExtractor:
     """
      基于用户的原始问题+【用户的历史对话】提取用户真正想问的商品名
@@ -215,7 +215,7 @@ class ItemNameExtractor:
      询问场景：（多级循环） 请问RS12-万用表和RS-13万用表分别如何测量电阻。---->>LLM---->商品名：[RS12-万用表,RS-13万用表，RS-DDD测量电阻]---confirm[RS12-万用表，,RS-13万用表,RS-DDD测量电阻:误判不能留]
     """
 
-    def extract_item_name(self, original_query: str) -> Dict[str, Any]:
+    def extract_item_name(self, original_query: str, history_text: str) -> Dict[str, Any]:
         """
         LLM根据用户原始问题提取商品名
         Args:
@@ -227,14 +227,13 @@ class ItemNameExtractor:
 
         result: Dict[str, Any] = {"item_names": [], "rewritten_query": original_query}
 
-        history = ""
         # 1. 获取LLM客户端
         llm_client = get_llm_client(response_format=True)
         if llm_client is None:
             return result
 
         # 2. 定义提示词(用户级别的)
-        human_prompt = ITEM_NAME_EXTRACT_TEMPLATE.format(history_text=history if history else "暂无上下文",
+        human_prompt = ITEM_NAME_EXTRACT_TEMPLATE.format(history_text=history_text if history_text else "暂无上下文",
                                                          query=original_query)
         system_prompt = "你是一个专业的客服助手，擅长理解用户意图和提取关键信息。"
 
@@ -294,22 +293,44 @@ class ItemNameConfirmNode(BaseNode):
     def process(self, state: QueryGraphState) -> QueryGraphState:
         # 1. 获取用户的原始问题
         original_query = state.get("original_query")
+        session_id = state.get('session_id')
 
-        # 2. 调用LLM提取商品名（本质：是如果直接基于用户的原始问题进行检索，质量很差。而我们实际需要的是明白用户真正想问你的商品是谁。）
-        clean_llm_result = self._item_name_extractor.extract_item_name(original_query)
-        # 2.1 获取item_names
+        # 2. 构建历史对话
+        chat_history = get_recent_messages(session_id, limit=10)
+        history_text = ""
+        for msg in chat_history:
+            role = msg.get("role")
+            content = msg.get("text", "")
+            history_text += f"{role}: {content}\n"
+
+        # 3. 调用LLM提取商品名（本质：是如果直接基于用户的原始问题进行检索，质量很差。而我们实际需要的是明白用户真正想问你的商品是谁。）
+        clean_llm_result = self._item_name_extractor.extract_item_name(original_query, history_text)
+        # 3.1 获取item_names
         item_names = clean_llm_result.get('item_names')
-        # 2.2 获取rewritten_query
+        # 3.2 获取rewritten_query
         rewritten_query = clean_llm_result.get('rewritten_query')
 
         if item_names:
-            # 3. 查询向量数据库&&过滤(评分对齐&分数差异过滤)
+            # 4. 查询向量数据库&&过滤(评分对齐&分数差异过滤)
             confirmed, options = self._item_name_aligner.match_align_filter(item_names)
         else:
             confirmed, options = [], []
 
-        # 4. 决定state的key值（继续、结束）修改state
+        # 5. 决定state的key值（继续、结束）修改state
         self._decide(state, item_names, confirmed, options, rewritten_query)
+
+        if confirmed:
+            ids_to_update = [
+                str(msg["_id"]) for msg in chat_history if not msg.get("item_names")
+            ]
+            if ids_to_update:
+                try:
+                    update_message_item_names(ids_to_update, confirmed)
+                except Exception as e:
+                    self.logger.warning(f"回填历史 item_names 失败: {e}")
+
+        # 将历史对话写入 state，供下游 answer_output 使用
+        state["history"] = chat_history
 
         return state
 
@@ -335,7 +356,6 @@ if __name__ == "__main__":
         # "original_query": "华为擎云W515操作环境支持哪些？以及华为擎云L420 用户手册 中包含操作环境嘛？"
         "original_query": "RS-12 数字万用表怎么测试电阻？以及华为擎云L420 用户手册 中包含操作环境嘛？"
     }
-
     print(f"输入: {json.dumps(test_state, ensure_ascii=False, indent=2)}\n")
 
     node_item_name_confirm = ItemNameConfirmNode()

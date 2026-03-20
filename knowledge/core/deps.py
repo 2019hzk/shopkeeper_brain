@@ -1,15 +1,17 @@
 from functools import lru_cache
-
 from knowledge.services.import_file_service import ImportFileService
 from knowledge.services.task_service import TaskService
+from knowledge.services.query_service import QueryService
 
-@lru_cache   # 缓存思想
+
+@lru_cache
 def get_task_service() -> TaskService:
-    task_service = TaskService()
-    return task_service
+    return TaskService()
 
-
-@lru_cache  # 缓存思想
+@lru_cache
 def get_import_file_service() -> ImportFileService:
-    import_file_service = ImportFileService(get_task_service())
-    return import_file_service
+    return ImportFileService(get_task_service())
+
+@lru_cache
+def get_query_service() -> QueryService:
+    return QueryService()

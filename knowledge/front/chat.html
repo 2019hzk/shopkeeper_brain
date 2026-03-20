@@ -6,24 +6,27 @@
   <title>问器知识库</title>
   <style>
     :root{
-      --bg:#f3f5f7;
-      --panel:#ffffff;
-      --text:#1f2d3d;
-      --muted:#7a869a;
-      --brand:#1aa7ff;
-      --brand2:#5b7cfa;
-      --bubble-user:#1aa7ff;
-      --bubble-bot:#ffffff;
-      --border:#e6e9ef;
-      --shadow:0 10px 30px rgba(31,45,61,.12);
+      --bg:#0f172a;
+      --panel:rgba(30, 41, 59, 0.7);
+      --text:#e2e8f0;
+      --muted:#94a3b8;
+      --brand:#38bdf8;
+      --brand2:#818cf8;
+      --bubble-user:linear-gradient(135deg, #38bdf8, #818cf8);
+      --bubble-bot:rgba(15, 23, 42, 0.6);
+      --border:rgba(255, 255, 255, 0.1);
+      --shadow:0 25px 50px -12px rgba(0, 0, 0, 0.5);
     }
     *{box-sizing:border-box}
     body{
       margin:0;
       font-family: "Segoe UI", "Microsoft YaHei", system-ui, -apple-system, Arial, sans-serif;
-      background: radial-gradient(1200px 600px at 20% 0%, rgba(26,167,255,.18), transparent 60%),
-                  radial-gradient(1000px 500px at 90% 10%, rgba(91,124,250,.18), transparent 55%),
-                  var(--bg);
+      background-color: #0f172a;
+      background-image: radial-gradient(circle at 15% 50%, rgba(56, 189, 248, 0.08) 0%, transparent 50%),
+                        radial-gradient(circle at 85% 30%, rgba(129, 140, 248, 0.08) 0%, transparent 50%),
+                        linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+                        linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+      background-size: 100% 100%, 100% 100%, 40px 40px, 40px 40px;
       color:var(--text);
       height:100vh;
       display:flex;
@@ -36,6 +39,8 @@
       max-width:980px;
       height:min(820px, 92vh);
       background:var(--panel);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
       border:1px solid var(--border);
       border-radius:16px;
       box-shadow:var(--shadow);
@@ -49,7 +54,7 @@
       gap:12px;
       padding:14px 18px;
       border-bottom:1px solid var(--border);
-      background:linear-gradient(90deg, rgba(26,167,255,.10), rgba(91,124,250,.10));
+      background:rgba(15, 23, 42, 0.5);
     }
     .brand{
       display:flex;
@@ -60,7 +65,7 @@
     .logo{
       width:36px;height:36px;border-radius:10px;
       background:linear-gradient(135deg, var(--brand), var(--brand2));
-      box-shadow:0 8px 18px rgba(26,167,255,.25);
+      box-shadow:0 0 20px rgba(56, 189, 248, 0.4);
     }
     .title{
       display:flex;
@@ -81,7 +86,7 @@
       border:1px solid var(--border);
       padding:6px 10px;
       border-radius:999px;
-      background:#fff;
+      background:rgba(15, 23, 42, 0.6);
     }
     .btn{
       border:none;
@@ -98,8 +103,7 @@
       flex:1;
       overflow:auto;
       padding:16px 14px 10px;
-      background:linear-gradient(180deg, rgba(26,167,255,.05), transparent 40%),
-                 linear-gradient(0deg, rgba(91,124,250,.05), transparent 45%);
+      background:rgba(15, 23, 42, 0.3);
     }
     .dayline{
       text-align:center;
@@ -126,13 +130,13 @@
     }
     .avatar{
       width:34px;height:34px;border-radius:10px;
-      background:#e9eef7;
+      background:rgba(56, 189, 248, 0.15);
       display:flex;align-items:center;justify-content:center;
       font-size:14px;
-      color:#3b4a5a;
+      color:#94a3b8;
       flex:0 0 auto;
     }
-    .avatar.bot{background:linear-gradient(135deg, rgba(26,167,255,.18), rgba(91,124,250,.18))}
+    .avatar.bot{background:linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(129, 140, 248, 0.2))}
     .bubble{
       max-width:min(720px, 76%);
       display:inline-block;
@@ -145,6 +149,7 @@
       font-size:14px;
       white-space:pre-wrap;
       overflow-wrap: break-word;
+      color:#e2e8f0;
     }
     .msg.user .bubble{
       background:var(--bubble-user);
@@ -159,10 +164,10 @@
     .msg.user .meta{color:rgba(255,255,255,.85)}
     details.progress{
       margin-top:8px;
-      border:1px dashed rgba(122,134,154,.45);
+      border:1px dashed rgba(56, 189, 248, 0.3);
       border-radius:12px;
       padding:8px 10px;
-      background:rgba(122,134,154,.06);
+      background:rgba(15, 23, 42, 0.4);
     }
     details.progress summary{
       cursor:pointer;
@@ -171,7 +176,7 @@
       font-size:12px;
     }
     .progress ul{margin:8px 0 0 18px;padding:0}
-    .progress li{margin:4px 0;font-size:12px;color:#56657a}
+    .progress li{margin:4px 0;font-size:12px;color:#94a3b8}
 
     .answer-images{
       margin-top:10px;
@@ -187,8 +192,8 @@
       height: auto;
       border-radius:12px;
       border:1px solid var(--border);
-      box-shadow:0 10px 24px rgba(31,45,61,.10);
-      background:#fff;
+      box-shadow:0 10px 24px rgba(0, 0, 0, 0.3);
+      background:rgba(15, 23, 42, 0.6);
     }
     .answer-images a{
       font-size:12px;
@@ -202,7 +207,7 @@
     }
     .dot{
       width:7px;height:7px;border-radius:50%;
-      background:#9aa6b2;
+      background:#38bdf8;
       animation:bounce 1.2s infinite ease-in-out;
     }
     .dot:nth-child(2){animation-delay:.15s}
@@ -218,7 +223,7 @@
       display:flex;
       gap:10px;
       align-items:flex-end;
-      background:#fff;
+      background:rgba(15, 23, 42, 0.5);
     }
     textarea{
       flex:1;
@@ -231,8 +236,11 @@
       outline:none;
       font-size:14px;
       line-height:1.5;
+      background:rgba(15, 23, 42, 0.6);
+      color:#e2e8f0;
     }
-    textarea:focus{border-color:rgba(26,167,255,.6); box-shadow:0 0 0 3px rgba(26,167,255,.12)}
+    textarea:focus{border-color:rgba(56, 189, 248, 0.6); box-shadow:0 0 0 3px rgba(56, 189, 248, 0.15)}
+    textarea::placeholder{color:#64748b}
     .send{
       width:88px;
       height:44px;
@@ -242,21 +250,22 @@
       font-size:14px;
       color:#fff;
       background:linear-gradient(135deg, var(--brand), var(--brand2));
+      box-shadow:0 0 15px rgba(56, 189, 248, 0.3);
     }
     .send:disabled{opacity:.6;cursor:not-allowed}
     .hint{
       padding:0 14px 12px;
       color:var(--muted);
       font-size:12px;
-      background:#fff;
+      background:transparent;
     }
     .kbd{
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
       border:1px solid var(--border);
       padding:1px 6px;
       border-radius:6px;
-      background:#f7f9fc;
-      color:#3b4a5a;
+      background:rgba(15, 23, 42, 0.6);
+      color:#94a3b8;
     }
   </style>
 </head>
@@ -274,7 +283,6 @@
         <label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer;user-select:none;color:var(--muted);margin-right:10px;">
           <input type="checkbox" id="streamToggle" checked> 流式输出
         </label>
-        <span class="pill" id="apiPill">API: 未连接</span>
         <button class="btn" id="btnClear">清空对话</button>
       </div>
     </div>
@@ -303,7 +311,6 @@
     const chatEl = document.getElementById('chat');
     const inputEl = document.getElementById('input');
     const sendBtn = document.getElementById('send');
-    const apiPill = document.getElementById('apiPill');
     const btnClear = document.getElementById('btnClear');
     const streamToggle = document.getElementById('streamToggle');
 
@@ -376,7 +383,7 @@
       const regex = /(https?:\/\/[^\s]+)/g;
       const matches = s.match(regex) || [];
       const urls = [];
-
+      
       // 去除首尾标点
       const trimTailPunct = (u) => String(u || '').replace(/[)\]}'">，。,;；\]】）＞]+$/g, '');
       const trimHeadPunct = (u) => String(u || '').replace(/^[<([{'"]+|^[＜（【\[]+/g, '');
@@ -460,14 +467,14 @@
         ? candidateImageUrls.map(normalizeUrl).filter(isImageUrl)
         : [];
       const hasBlockImages = imagesFromBlock && imagesFromBlock.length > 0;
-
+      
       // 使用宽松提取
       const looseImages = extractUrlsLoose(answerText).map(normalizeUrl).filter(isImageUrl);
-
+      
       // 只要后端给了候选图片，就展示（避免答案没写“如图”但用户仍需要看图）
       // 或者从文本里提取到了图片 URL
       const shouldShow = hasBlockImages || (candidates.length > 0) || (looseImages.length > 0);
-
+      
       // 优先级：Block 显式标记 > 后端候选 > 文本宽松提取
       // 注意：这里做个并集可能更好，防止漏掉
       const allImages = new Set([
@@ -653,16 +660,6 @@
       if(progressEl) bubble.appendChild(progressEl);
     }
 
-    async function apiHealth(){
-      try{
-        const res = await fetch(`${API_BASE}/health`);
-        if(!res.ok) throw new Error('health not ok');
-        apiPill.textContent = `API: 已连接`;
-      }catch(e){
-        apiPill.textContent = `API: 未连接`;
-      }
-    }
-
     async function loadHistory(){
       try{
         const res = await fetch(`${API_BASE}/history/${sessionId}`);
@@ -741,7 +738,7 @@
         console.log('[perf] B submitQuery start', performance.now(), { isStream });
         const data = await submitQuery(text);
         console.log('[perf] B submitQuery end', performance.now(), data);
-
+        
         // 渲染初始状态
         renderProgress(botMsgEl, [], [], 'pending');
 
@@ -755,8 +752,8 @@
         }
 
         // 流式：SSE
-        const { session_id } = data; // 此时 backend 返回 session_id
-
+        const { task_id } = data;
+        
         const bubble = botMsgEl.querySelector('.bubble');
         let answerEl = bubble.querySelector('.answer');
         if(!answerEl){
@@ -765,8 +762,8 @@
           bubble.insertBefore(answerEl, bubble.firstChild);
         }
 
-        const es = new EventSource(`${API_BASE}/stream/${session_id}`);
-        console.log('[perf] C EventSource created', performance.now(), { session_id });
+        const es = new EventSource(`${API_BASE}/stream/${task_id}`);
+        console.log('[perf] C EventSource created', performance.now(), { task_id });
         let rawAnswerText = '';
 
         es.addEventListener('progress', (e) => {
@@ -802,7 +799,7 @@
           // 收起进度条
           const progress = botMsgEl.querySelector('details.progress');
           if(progress) progress.removeAttribute('open');
-
+          
           try{
             const d = JSON.parse(e.data || '{}');
             // 流式 delta 可能不包含“【图片】/图片列表”，最终包的 d.answer 才是完整答案；优先使用 d.answer
@@ -819,7 +816,7 @@
           if(typing) typing.remove();
           const progress = botMsgEl.querySelector('details.progress');
           if(progress) progress.removeAttribute('open');
-
+          
           try{
             const d = JSON.parse(e.data || '{}');
             const finalText = (d && typeof d.answer === 'string' && d.answer.trim().length > 0) ? d.answer : (rawAnswerText || answerEl.textContent || '');
@@ -884,8 +881,6 @@
       scrollToBottom();
     });
 
-    apiHealth();
-    setInterval(apiHealth, 5000);
     loadHistory();
     setTimeout(() => inputEl.focus(), 200);
   </script>

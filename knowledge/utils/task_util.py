@@ -28,9 +28,9 @@ _NODE_NAME_TO_CN: Dict[str, str] = {
 
     # --- Query 流程节点（kb/query_process/main_graph.py）---
     "item_name_confirm_node": "确认问题产品",
-    "answer_output": "生成答案",
-    "node_rerank": "重排序",
-    "rerank_node": "倒排融合",
+    "answer_output_node": "生成答案",
+    "rerank_node": "重排序",
+    "rrf_node": "倒排融合",
     "mcp_search_node": "网络搜索",
     "vector_search_node": "切片搜索",
     "hyde_search_node": "切片搜索(假设性文档)",
