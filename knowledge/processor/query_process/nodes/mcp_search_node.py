@@ -5,7 +5,7 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Union
 from agents.mcp import MCPServerSse  # pip install openai_agents
 from langchain_core.messages import SystemMessage, HumanMessage
 from knowledge.processor.query_process.state import QueryGraphState
@@ -24,7 +24,7 @@ class McpSearchNode(BaseNode):
      
     """
 
-    def process(self, state: QueryGraphState) -> QueryGraphState:
+    def process(self, state: QueryGraphState) -> Union[QueryGraphState, Dict[str, Any]]:
 
         # 1. 参数校验
         validated_rewritten_query, validated_item_names = self._validate_query_inputs(state)
@@ -36,10 +36,10 @@ class McpSearchNode(BaseNode):
             return state
 
         # 3. 更新state web_search_docs
-        state['web_search_docs'] = mcp_result
 
-        # 4. 返回更新后的state
-        return  state
+
+        # 4. 只更新state的web_search_docs
+        return {"web_search_docs":mcp_result}
 
     def _validate_query_inputs(self, state: QueryGraphState) -> Tuple[str, List[str]]:
 
@@ -58,7 +58,6 @@ class McpSearchNode(BaseNode):
 
         # 4. 返回
         return rewritten_query, item_names
-
 
     async def _create_execute_web_search(self, validated_rewritten_query: str) -> List[Dict[str, Any]]:
         """
@@ -87,7 +86,7 @@ class McpSearchNode(BaseNode):
 
             # 3. 执行工具
             execute_tool_result = await mcp_client.call_tool(tool_name="bailian_web_search",
-                                                             arguments={"query": validated_rewritten_query, "count": 2})
+                                                             arguments={"query": validated_rewritten_query, "count": 3})
 
             # 4. 解析工具执行完的结果
             # 4.1 获取最外层的对象
@@ -137,4 +136,3 @@ if __name__ == '__main__':
 
     for r in result.get('web_search_docs'):
         print(json.dumps(r, ensure_ascii=False, indent=2))
-

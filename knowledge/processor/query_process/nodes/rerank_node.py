@@ -15,6 +15,7 @@ from knowledge.utils.bge_rerank_util import get_reranker_model
 
 class RerankNode(BaseNode):
     name = "rerank_node"
+
     def process(self, state: QueryGraphState) -> QueryGraphState:
         # 1. 获取query
         user_query = state.get('rewritten_query', '') or state.get('original_query', '')
@@ -86,7 +87,7 @@ class RerankNode(BaseNode):
             if not content:
                 continue
             title = rrf_doc.get('title', '').strip()
-            chunk_id = rrf_doc.get('chunk_id', '').strip()
+            chunk_id = rrf_doc.get('chunk_id')
             # 1.4 格式化本地RRF的chunk结构
             format_rrf_doc = self._format_rrf_docs(content=content, title=title, chunk_id=chunk_id, source="local")
             final_docs.append(format_rrf_doc)

@@ -14,6 +14,7 @@ class QueryGraphState(TypedDict):
     各个属性的结构
     """
     session_id: str # 会话ID
+    task_id:str # 任务ID
     message_id: str # 消息ID
     original_query: str # 原始查询
     embedding_chunks: list # 已向量化的切片
@@ -35,6 +36,7 @@ class QueryGraphState(TypedDict):
 
 DEFAULT_STATE: QueryGraphState = {
     "session_id": "",               # 会话ID
+    "task_id": "",               # 任务ID
     "message_id": "",               # 消息ID
     "original_query": "",           # 原始查询
     "embedding_chunks": [],         # 已向量化的切片

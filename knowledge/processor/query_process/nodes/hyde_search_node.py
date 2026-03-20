@@ -4,7 +4,7 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-from typing import List, Tuple
+from typing import List, Tuple, Union,Any,Dict
 from langchain_core.messages import SystemMessage, HumanMessage
 from knowledge.processor.query_process.state import QueryGraphState
 from knowledge.processor.query_process.base import BaseNode
@@ -19,7 +19,7 @@ from knowledge.utils.bge_m3_embedding_util import generate_hybrid_embeddings, ge
 class HyDeSearchNode(BaseNode):
     name = "hyde_search_node"
 
-    def process(self, state: QueryGraphState) -> QueryGraphState:
+    def process(self, state: QueryGraphState) -> Union[QueryGraphState,Dict[str,Any]]:
 
         # 1. 参数校验
         validated_query, validate_item_names = self._validate_query_inputs(state)
@@ -58,11 +58,10 @@ class HyDeSearchNode(BaseNode):
         if not reps or not reps[0]:
             return state
 
-        # 8. 更新state
-        state['hyde_embedding_chunks'] = reps[0]
 
-        # 9. 返回更新后的state
-        return state
+
+        # 8. 只更新hyde_embedding_chunks
+        return {"hyde_embedding_chunks":reps[0]}
 
     def _validate_query_inputs(self, state: QueryGraphState) -> Tuple[str, List[str]]:
 
@@ -134,3 +133,43 @@ if __name__ == '__main__':
 
     for r in result.get('hyde_embedding_chunks'):
         print(json.dumps(r, ensure_ascii=False, indent=2))
+
+if __name__ == "__main__":
+    from knowledge.processor.query_process.base import setup_logging
+    import json
+
+    setup_logging()
+
+    print("=" * 60)
+    print("开始测试: HyDE 检索节点 (HydeSearchNode)")
+    print("=" * 60)
+
+    mock_state = {
+        "rewritten_query": "RS-12 数字万用表如何测量直流电压？",
+        "item_names": ["RS-12 数字万用表"],
+    }
+
+    print("【输入状态】:")
+    print(f"  查询: {mock_state['rewritten_query']}")
+    print(f"  商品: {mock_state['item_names']}")
+    print("-" * 60)
+
+    node = HyDeSearchNode()
+    result = node.process(mock_state)
+
+    chunks = result.get("hyde_embedding_chunks", [])
+    print(f"\n【HyDE 检索结果】: {len(chunks)} 条")
+    for i, chunk in enumerate(chunks, 1):
+        entity = chunk.get("entity", {})
+        print(f"  [{i}] chunk_id={entity.get('chunk_id')} "
+              f"item_name={entity.get('item_name')} "
+              f"distance={chunk.get('distance', 'N/A')}")
+        content = entity.get("content", "")
+        print(f"      内容: {content[:80]}...")
+
+    hyde_doc = result.get("hyde_doc", "")
+    if hyde_doc:
+        print(f"\n【假设性文档】:\n{hyde_doc[:200]}...")
+
+    print("-" * 60)
+    print("测试完成")

@@ -287,6 +287,7 @@ class ItemNameConfirmNode(BaseNode):
     name = "item_name_confirm_node"
 
     def __init__(self):
+        super().__init__()
         self._item_name_extractor = ItemNameExtractor()
         self._item_name_aligner = ItemNameAligner()
 

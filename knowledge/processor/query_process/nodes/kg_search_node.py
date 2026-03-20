@@ -943,19 +943,20 @@ class KnowledgeGraphSearchNode(BaseNode):
       └──────────┘   └──────────┘   └────────────┘   └──────────┘
       """
 
-    def process(self, state: QueryGraphState) -> QueryGraphState:
+    name = "kg_search_node"
+
+    def process(self, state: QueryGraphState) -> Union[QueryGraphState, Dict[str, Any]]:
         # 1. 参数校验
         validated_query, validated_item_names = self._validate_inputs(state)
 
         # 2. 执行流水线
         kg_result:Dict[str,Any] = self._run_pipeline(validated_query, validated_item_names)
 
-        # 3. 更新state
-        state['kg_chunks']=kg_result.get('kg_chunks')
-        state['kg_triples']=kg_result.get('kg_triples')
-
-        # 4. 返回
-        return state
+        # 3. 只更新state中的kg_chunks、kg_triples
+        return {
+            "kg_chunks":kg_result.get('kg_chunks'),
+            "kg_triples": kg_result.get('kg_triples')
+        }
 
     def _validate_inputs(self, state: QueryGraphState) -> Tuple[str, List[str]]:
         # 1. 获取参数

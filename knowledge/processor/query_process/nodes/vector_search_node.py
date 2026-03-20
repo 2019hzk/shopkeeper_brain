@@ -4,7 +4,7 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Union
 from knowledge.processor.query_process.state import QueryGraphState
 from knowledge.processor.query_process.base import BaseNode, T
 from knowledge.processor.query_process.exceptions import StateFieldError
@@ -15,7 +15,7 @@ from knowledge.utils.milvus_util import get_milvus_client, create_hybrid_search_
 class VectorSearchNode(BaseNode):
     name = "vector_search_node"
 
-    def process(self, state: QueryGraphState) -> QueryGraphState:
+    def process(self, state: QueryGraphState) -> Union[QueryGraphState,Dict[str, Any]] :
         # 1. 参数校验
         validated_query, validate_item_names = self._validate_query_inputs(state)
 
@@ -53,8 +53,7 @@ class VectorSearchNode(BaseNode):
             return state
 
         # 5. 更新state的embedding_chunks
-        state['embedding_chunks'] = reps[0]
-        return state
+        return {"embedding_chunks":reps[0]}
 
     def _validate_query_inputs(self, state: QueryGraphState) -> Tuple[str, List[str]]:
 
